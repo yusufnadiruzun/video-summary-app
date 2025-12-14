@@ -10,7 +10,7 @@ const SummaryCard = ({ summary }) => {
           initial={{ y: 50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 50, opacity: 0 }}
-          className="mt-16 sm:mt-10 max-w-4xl mx-auto"
+          className="mt-4 sm:mt-1 max-w-4xl mx-auto"
         >
           <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-3xl p-6 sm:p-8 shadow-2xl">
             

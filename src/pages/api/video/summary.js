@@ -19,7 +19,7 @@ export default async function handler(req, res) {
 
   // 1. Kimlik Doğrulama (authMiddleware karşılığı)
   const isAuthenticated = authenticate(req, res);
-  
+  console.log("Authentication result (Next.js API):", isAuthenticated, req.userId, req.isGuest);
   if (!isAuthenticated) {
     return; // Yanıt zaten gönderildi
   }
@@ -33,6 +33,7 @@ export default async function handler(req, res) {
 
     // 2. Kullanıcı/paket bilgisi al
     const [rows] = await db.query("SELECT * FROM user_packages WHERE user_id = ?", [userId]);
+
     if (!rows.length) return res.status(404).json({ error: "Kullanıcı bulunamadı" });
 
     let user = rows[0];
