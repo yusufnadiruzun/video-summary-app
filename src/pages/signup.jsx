@@ -1,55 +1,60 @@
-// pages/signup.jsx
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 
-// ❌ KALDIRILDI: Next.js API yolları aynı domain üzerinde çalıştığı için artık gerekli değildir.
-// const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
 export default function SignUp() {
-  const router = useRouter(); // Google Auth Durumları
+  const router = useRouter(); 
+  
+  // Google Auth States
   const [googleLoaded, setGoogleLoaded] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false); // Email/Password Auth Durumları
+  const [googleLoading, setGoogleLoading] = useState(false); 
+  
+  // Email/Password Auth States
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false); // Genel Hata Durumu
-  const [error, setError] = useState(""); // Eğer token varsa → direkt ödeme ekranına (kayıt olmaya gerek yok)
-
+  const [isSubmitting, setIsSubmitting] = useState(false); 
+  
+  // General Error State
+  const [error, setError] = useState(""); 
+  
+  // If token exists → redirect to checkPackage
   useEffect(() => {
     if (typeof window !== "undefined" && localStorage.getItem("auth_token")) {
-      router.replace("/payment"); // NOT: checkPackage yerine payment kullanmışsınız, bunu korudum.
+      router.replace("/checkPackage"); 
     }
-  }, [router]); // router dependency'si eklendi. // Google script DOM'a ekleniyor
+  }, [router]); 
 
+  // Inject Google script into DOM
   useEffect(() => {
     const script = document.createElement("script");
     script.src = "https://accounts.google.com/gsi/client";
     script.async = true;
     script.defer = true;
     script.onload = () => setGoogleLoaded(true);
-    document.body.appendChild(script); // Cleanup fonksiyonu eklenmedi, genellikle sayfa yüklemesinde bir kez yapılır.
-  }, []); // Google Login button render
-
+    document.body.appendChild(script); 
+  }, []); 
+  
+  // Render Google Login button
   useEffect(() => {
     if (!googleLoaded || !window.google) return;
 
     window.google.accounts.id.initialize({
-      client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID, // 👈 .env'den geliyor
+      client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID, 
       callback: handleGoogleResponse,
     });
 
     window.google.accounts.id.renderButton(
-      document.getElementById("googleSignUpBtn"), // ID Sign In sayfasından farklı
+      document.getElementById("googleSignUpBtn"), 
       { theme: "outline", size: "large", width: "100%" }
     );
-  }, [googleLoaded]); /** 🔥 Google Auth backend doğrulama (Sign Up/In için) */
+  }, [googleLoaded]); 
 
+  /** 🔥 Handle Google Auth backend verification */
   const handleGoogleResponse = async (response) => {
     setGoogleLoading(true);
     setError("");
 
     try {
-      // ✅ DÜZELTME: API_URL kaldırıldı, '/api/auth/google' göreli yolu kullanıldı.
-      const res = await fetch(`/api/auth/google`, {
+      const res = await fetch(`/api/auth?action=google`, { // Updated to match your single endpoint logic
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ credential: response.credential }),
@@ -58,115 +63,113 @@ export default function SignUp() {
       const data = await res.json();
 
       if (!res.ok || !data.token) {
-        setError("Registration with Google failed. " + (data.message || ""));
+        setError("Google signup failed. " + (data.error || ""));
         setGoogleLoading(false);
         return;
       }
 
-      localStorage.setItem("auth_token", data.token); // token saklanıyor
-      router.push("/checkPackage"); // Başarılı kayıt/giriş → ödeme ekranı
+      localStorage.setItem("auth_token", data.token); 
+      router.push("/checkPackage"); 
     } catch (err) {
       console.error(err);
-      setError("An unexpected error occurred during Google registration.");
+      setError("An unexpected error occurred during Google signup.");
       setGoogleLoading(false);
     }
-  }; /** 📧 E-posta/Şifre ile KAYIT backend doğrulama */
+  }; 
+  
+  /** 📧 Handle Email/Password registration */
   const handleEmailSignUp = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError("");
 
-    console.log("Email Sign Up initiated with:", { email, password });
     try {
-      // ✅ KONTROL: Burası zaten göreliydi ve doğru çalışacaktır.
-      // API dosyanızın src/pages/api/auth/register.js konumunda olduğunu varsayıyoruz.
-      const res = await fetch(`/api/auth/register`, {
+      const res = await fetch(`/api/auth?action=register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      console.log("Backend response status:", res.status);
 
       const data = await res.json();
 
-      if (!res.ok || !data.token) {
-        // Status 200 kontrolü yerine res.ok kontrolü daha güvenlidir.
-        setError(
-          data.message ||
-            "Registration failed. Please try a different email address."
-        );
+      if (!res.ok) {
+        setError(data.error || "Signup failed. Please try a different email address.");
         setIsSubmitting(false);
         return;
       }
 
-      console.log(data);
-      localStorage.setItem("auth_token", data.token); // token saklanıyor
-      router.push("/checkPackage"); // Başarılı kayıt → ödeme ekranı
+      // If register action returns a token directly, login immediately
+      if (data.token) {
+        localStorage.setItem("auth_token", data.token);
+        router.push("/checkPackage");
+      } else {
+        // If your register action doesn't return a token, redirect to signin
+        router.push("/signin?message=Registered successfully. Please login.");
+      }
     } catch (err) {
       console.error(err);
-      setError("An unexpected error occurred during the registration process.");
+      setError("An unexpected error occurred during registration.");
       setIsSubmitting(false);
     }
   };
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-700 p-6">
-           {" "}
-      <div className="bg-white p-10 rounded-2xl shadow-2xl w-full max-w-md">
-               {" "}
-        <h2 className="text-3xl font-bold text-center text-gray-800 mb-6">
-                    Create Your Account ✨        {" "}
+      
+      {/* FORM CARD */}
+      <div className="bg-white p-10 rounded-2xl shadow-2xl w-full max-w-md border border-gray-100">
+        
+        <h2 className="text-3xl font-extrabold text-center text-purple-700 mb-8">
+          Create Your Account ✨
         </h2>
-                {/* 🔥 GOOGLE SIGN UP BUTONU */}       {" "}
+        
+        {/* GOOGLE SIGN UP BUTTON */}
         <div id="googleSignUpBtn" className="w-full flex justify-center mb-6" />
-               {" "}
+        
         {googleLoading && (
-          <p className="text-center text-green-600 mb-3">
-            Google ile Kayıt yapılıyor...
+          <p className="text-center text-green-600 mb-4 text-sm font-medium">
+            Signing up with Google...
           </p>
         )}
-               {" "}
+        
+        {/* Divider */}
         <div className="flex items-center my-6">
-                    <hr className="flex-1 border-gray-300" />         {" "}
+          <hr className="flex-1 border-gray-300" />
           <span className="px-3 text-gray-500 text-sm">
-            veya e-posta ile kayıt ol
+            or register with email
           </span>
-                    <hr className="flex-1 border-gray-300" />       {" "}
+          <hr className="flex-1 border-gray-300" />
         </div>
-                        {/* 📧 E-POSTA VE ŞİFRE KAYIT FORMU */}       {" "}
+        
+        {/* EMAIL AND PASSWORD FORM */}
         <form onSubmit={handleEmailSignUp}>
-                   {" "}
+          
           <div className="mb-4">
-                       {" "}
             <label
               htmlFor="email"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-                            E-posta Adresi            {" "}
+              Email Address
             </label>
-                       {" "}
             <input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 transition duration-150"
               placeholder="email@example.com"
               disabled={isSubmitting || googleLoading}
             />
-                     {" "}
           </div>
-                   {" "}
+          
           <div className="mb-6">
-                       {" "}
             <label
               htmlFor="password"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-                            Şifre            {" "}
+              Password
             </label>
-                       {" "}
             <input
               id="password"
               type="password"
@@ -174,36 +177,32 @@ export default function SignUp() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="En az 6 karakter"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 transition duration-150"
+              placeholder="At least 6 characters"
               disabled={isSubmitting || googleLoading}
             />
-                     {" "}
           </div>
-                   {" "}
-          {error && <p className="text-red-600 text-center mb-4">{error}</p>}   
-               {" "}
+          
+          {error && <p className="text-red-600 text-center mb-4 text-sm font-medium">{error}</p>}
+          
           <button
             type="submit"
-            className="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-150 ease-in-out font-semibold disabled:bg-green-400"
+            className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-4 focus:ring-purple-500 focus:ring-opacity-50 transition duration-150 ease-in-out font-semibold disabled:bg-purple-400 disabled:cursor-not-allowed uppercase tracking-wide"
             disabled={isSubmitting || googleLoading}
           >
-                        {isSubmitting ? "Kayıt Yapılıyor..." : "Hesap Oluştur"} 
-                   {" "}
+            {isSubmitting ? "Processing..." : "Create Account"}
           </button>
-                 {" "}
+        
         </form>
-               {" "}
-        <p className="text-center text-sm text-gray-500 mt-4">
-                    Zaten bir hesabın var mı?          {" "}
-          <a href="/signin" className="text-indigo-600 font-medium ml-1">
-            Giriş Yap
+        
+        <p className="text-center text-sm text-gray-500 mt-6">
+          Already have an account? 
+          <a href="/signin" className="text-purple-600 font-medium hover:text-purple-800 ml-1 transition duration-150 underline">
+            Sign In
           </a>
-                 {" "}
         </p>
-             {" "}
+        
       </div>
-         {" "}
     </div>
   );
 }

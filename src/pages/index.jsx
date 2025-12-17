@@ -158,25 +158,22 @@ const Home = () => {
     );
 
     // --- GÜNCELLENMİŞ PAKET SEÇME FONKSİYONU ---
-    const handleSelectPackage = (pkgName) => {
-        if (typeof window !== "undefined") {
-            setShowModal(false); 
-            
-            const authToken = localStorage.getItem("auth_token");
-            
-            // 1. Seçilen paketi kaydet
-            localStorage.setItem("selectedPackage", pkgName);
-            
-            // 2. Kontrol: Eğer kullanıcı gerçekten giriş yapmışsa (auth_token var)
-            if (authToken) {
-                // Direkt Checkout sayfasına yönlendir (localStorage'dan okuyacak)
-                router.push("/CheckPackage");
-            } else {
-                // Giriş yapmamışsa (auth_token yok) Sign In sayfasına yönlendir
-                router.push("/signin");
-            }
+   const handleSelectPackage = (pkgName) => {
+    if (typeof window !== "undefined") {
+        setShowModal(false); 
+        const authToken = localStorage.getItem("auth_token");
+        
+        // Seçilen paketi hala localStorage'da tutabiliriz çünkü Checkout sayfası bunu okuyacak
+        localStorage.setItem("selectedPackage", pkgName);
+        
+        if (authToken) {
+            router.push("/CheckPackage");
+        } else {
+            // 🚨 DEĞİŞİKLİK: Hedefi URL parametresi olarak gönderiyoruz
+            router.push("/signin?callbackUrl=/CheckPackage");
         }
-    };
+    }
+};
 
 
     return (

@@ -1,79 +1,70 @@
-// src/pages/api/auth.js
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import axios from "axios";
-
-// db.js dosyasının doğru yolu
 import db from "../../../../lib/Db"; 
 
-// JWT_SECRET'ı doğrudan process.env'den alın, Next.js bunu otomatik olarak yükler.
 const JWT_SECRET = process.env.JWT_SECRET || "secretkey"; 
 
 export default async function handler(req, res) {
-  // Sadece POST metotlarını kabul et (çünkü tüm rotalarınız POST)
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
     return res.status(405).end(`Method ${req.method} Not Allowed`);
   }
 
-  // Next.js'te Express Router yok, URL'ye göre işlem yapmalıyız.
-  // URL'yi alıyoruz: Örn: /api/auth?action=register
   const { action } = req.query; 
-
-  // Eğer bu dosyayı pages/api/auth/[action].js olarak adlandırırsanız, 
-  // action değişkenini req.query.action olarak alabilirsiniz. 
-  // Kolaylık için tek dosya ve query parametresi kullandım: /api/auth?action=login
-
   const { email, password, name, credential } = req.body;
 
   try {
     switch (action) {
       // -------------------------------------------------------------------------
-      // 📌 /api/auth?action=register
+      // 📌 REGISTER
       // -------------------------------------------------------------------------
       case 'register':
         const hash = await bcrypt.hash(password, 10);
-
-        // Kullanıcı oluştur
         const [result] = await db.execute(
-          `INSERT INTO users (name,email,password_hash) VALUES (?,?,?)`,
+          `INSERT INTO users (name, email, password_hash) VALUES (?,?,?)`,
           [name || null, email, hash]
         );
 
-        // Yeni kullanıcıya Default Ücretsiz Paket Ver
         await db.execute(`
           INSERT INTO user_packages (user_id, package_type, Package_Status, Start_Date, End_Date)
           VALUES (?, 'free', 1, CURDATE(), NULL)
         `, [result.insertId]);
 
-        return res.status(201).json({ message: "Kayıt başarılı" }); // 201 Created
+        return res.status(201).json({ message: "Registration successful" });
 
       // -------------------------------------------------------------------------
-      // 📌 /api/auth?action=login
+      // 📌 LOGIN (Email & Password)
       // -------------------------------------------------------------------------
       case 'login':
-        const [u] = await db.execute("SELECT id, password_hash FROM users WHERE email=?", [email]);
+        // 🔥 DÜZELTME: is_admin sütununu da seçiyoruz
+        const [u] = await db.execute("SELECT id, password_hash, is_admin FROM users WHERE email=?", [email]);
         
         if (!u.length) {
-          return res.status(404).json({ error: "Kullanıcı bulunamadı" });
+          return res.status(404).json({ error: "User not found" });
         }
 
         const user = u[0];
         
         if (!user.password_hash) {
-          return res.status(403).json({ error: "Bu hesap için şifre ayarlanmamıştır. Lütfen Google ile veya şifre sıfırlama ile giriş yapın." });
+          return res.status(403).json({ error: "No password set for this account. Use Google Sign-In." });
         }
 
         const match = await bcrypt.compare(password, user.password_hash);
         if (!match) {
-          return res.status(403).json({ error: "Şifre yanlış" });
+          return res.status(403).json({ error: "Invalid password" });
         }
 
-        const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "30d" });
-        return res.json({ token });
+        // 🔥 DÜZELTME: Token içine isAdmin eklendi
+        const token = jwt.sign(
+          { userId: user.id, isAdmin: user.is_admin === 1 }, 
+          JWT_SECRET, 
+          { expiresIn: "30d" }
+        );
+        return res.json({ token, isAdmin: user.is_admin === 1 });
         
       // -------------------------------------------------------------------------
-      // 📌 /api/auth?action=google
+      // 📌 GOOGLE LOGIN
       // -------------------------------------------------------------------------
       case 'google':
         const google = await axios.get(
@@ -82,57 +73,59 @@ export default async function handler(req, res) {
 
         const { email: googleEmail, name: googleName, picture, sub } = google.data;
         let userId;
+        let isAdminStatus = false;
 
-        const [existingUser] = await db.execute("SELECT id FROM users WHERE email=?", [googleEmail]);
+        // 🔥 DÜZELTME: is_admin sütununu da seçiyoruz
+        const [existingUser] = await db.execute("SELECT id, is_admin FROM users WHERE email=?", [googleEmail]);
 
         if (existingUser.length) {
             userId = existingUser[0].id;
+            isAdminStatus = existingUser[0].is_admin === 1;
         } 
         else {
-            // Yeni kullanıcı kaydı
             const [ins] = await db.execute(
                 `INSERT INTO users (email,name,google_sub,avatar) VALUES (?,?,?,?)`,
                 [googleEmail, googleName, sub, picture]
             );
             userId = ins.insertId;
 
-            // Default free paket ata
             await db.execute(`
                 INSERT INTO user_packages (user_id, package_type, Package_Status, Start_Date, End_Date)
                 VALUES (?, 'free', 1, CURDATE(), NULL)
             `, [userId]);
         }
 
-        const googleToken = jwt.sign({ userId }, JWT_SECRET, { expiresIn: "30d" });
-        return res.json({ token: googleToken });
+        // 🔥 DÜZELTME: Token içine isAdmin eklendi
+        const googleToken = jwt.sign(
+          { userId, isAdmin: isAdminStatus }, 
+          JWT_SECRET, 
+          { expiresIn: "30d" }
+        );
+        return res.json({ token: googleToken, isAdmin: isAdminStatus });
 
       // -------------------------------------------------------------------------
-      // 📌 /api/auth?action=guest
+      // 📌 GUEST LOGIN
       // -------------------------------------------------------------------------
       case 'guest':
         const guestMail = `guest_${Date.now()}@local`;
-
-        // Kullanıcı oluştur
         const [usr] = await db.execute(`INSERT INTO users (email) VALUES (?)`, [guestMail]);
 
-        // Misafir paketi ekle
         await db.execute(`
             INSERT INTO user_packages (user_id, package_type, Package_Status, Start_Date, End_Date)
             VALUES (?, 'guest', 1, CURDATE(), NULL)
         `, [usr.insertId]);
 
-        const guestToken = jwt.sign({ userId: usr.insertId, guest: true }, JWT_SECRET, { expiresIn: "30d" });
+        const guestToken = jwt.sign({ userId: usr.insertId, guest: true, isAdmin: false }, JWT_SECRET, { expiresIn: "30d" });
         return res.json({ token: guestToken });
 
       default:
-        return res.status(404).json({ error: "Geçersiz kimlik doğrulama rotası." });
+        return res.status(404).json({ error: "Invalid auth action." });
     }
   } catch (err) {
-    console.error("Kimlik doğrulama hatası:", err);
-    // Kayıt hatası (email zaten var) için özel durum
+    console.error("Auth Error:", err);
     if (action === 'register' && err.code === 'ER_DUP_ENTRY') {
-        return res.status(400).json({ error: "Bu email zaten kayıtlı." });
+        return res.status(400).json({ error: "Email already registered." });
     }
-    return res.status(500).json({ error: "Sunucu hatası. İşlem tamamlanamadı." });
+    return res.status(500).json({ error: "Internal server error." });
   }
 }
