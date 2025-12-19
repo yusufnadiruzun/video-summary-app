@@ -10,6 +10,7 @@ import { initializePaddle, Paddle } from "@paddle/paddle-js";
 
 // 1. Paket Verileri için TypeScript Arayüzü (Interface) Tanımlama
 interface Package {
+    id?: number;
     name: "Starter" | "Pro" | "Premium"; // Sadece bu üç değeri kabul et
     price: string;
     period: string;
@@ -21,6 +22,7 @@ interface Package {
 // 2. Paket Verilerine Fiyat Kimliklerini Ekle ve Package Arayüzünü Kullan
 const packagesData: Package[] = [
     {
+      id:2,
       name: "Starter",
       price: "$9",
       period: "/month",
@@ -29,6 +31,7 @@ const packagesData: Package[] = [
       paddlePriceId: "pri_01kbtkd3t807vvqwb9hyyfsnhg" 
     },
     {
+        id:3,
       name: "Pro",
       price: "$19",
       period: "/month",
@@ -37,6 +40,7 @@ const packagesData: Package[] = [
       paddlePriceId: "pri_01kc6kkzwvyp827gqqk9c03pfm" 
     },
     {
+        id:4    ,
       name: "Premium",
       price: "$39",
       period: "/month",
@@ -152,8 +156,8 @@ const CheckPackage: React.FC = () => {
             settings: {
                 displayMode: "overlay",
                 theme: "dark",
-                successUrl: `${window.location.origin}/success?plan=${pkg.name}`,
-                
+               successUrl: `${window.location.origin}/success?plan=${pkg.name}&packageId=${pkg.id}`,
+               
                 // Custom data'nın Record<string, any> tipinde olduğunu belirt
             },
         });

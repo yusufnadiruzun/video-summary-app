@@ -5,6 +5,7 @@ import { Zap, X, Check } from "lucide-react";
 // packages verisini ana bileşenden alacağız, ancak varsayılan olarak burada tanımlıyoruz.
 const packagesData = [
     {
+      id:2,
       name: "Starter",
       price: "$9",
       period: "/month",
@@ -17,6 +18,7 @@ const packagesData = [
       popular: false,
     },
     {
+      id:3,
       name: "Pro",
       price: "$19",
       period: "/month",
@@ -30,6 +32,7 @@ const packagesData = [
       popular: true,
     },
     {
+      id:4,
       name: "Premium",
       price: "$39",
       period: "/month",
@@ -182,7 +185,7 @@ const PricingModal = ({
 
                   <div className="mt-8 sm:mt-10">
                     <button
-                      onClick={() => handleSelectPackage(pkg.name)}
+                      onClick={() => handleSelectPackage(pkg)}
                       className={`${
                         pkg.popular
                           ? "bg-gradient-to-r from-cyan-400 to-purple-600 text-black shadow-lg"
