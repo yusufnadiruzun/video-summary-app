@@ -207,7 +207,7 @@ const Home = () => {
       localStorage.setItem("selectedPackage", pkgName.name);
 
       if (authToken) {
-        selectPackage(pkgName.id); // Paketi seç
+        
         router.push("/CheckPackage");
       } else {
         // 🚨 DEĞİŞİKLİK: Hedefi URL parametresi olarak gönderiyoruz

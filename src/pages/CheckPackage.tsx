@@ -61,15 +61,30 @@ const CheckPackage: React.FC = () => {
     const [loading, setLoading] = useState<boolean>(true);
     const [isUserAuthenticated, setIsUserAuthenticated] = useState<boolean>(true);
     // Paddle State'i - Paddle tipini veya null/undefined kabul et
-    const [paddle, setPaddle] = useState<Paddle>(); 
+    const [paddle, setPaddle] = useState<Paddle>();
 
+ async function selectPackage(packageId: number): Promise<void> {
+    try {
+      const response = await fetch("/api/user/package?action=select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packageId: packageId }),
+      });
 
+      const data = await response.json();
+      console.log("Seçim Sonucu:", data.message);
+    } catch (error) {
+      console.error("Hata:", error);
+    }
+  }
     // 1. useEffect: localStorage'dan paketi ve auth durumunu oku
     useEffect(() => {
         if (typeof window !== "undefined") {
             const storedPlan = localStorage.getItem("selectedPackage");
             const authToken = localStorage.getItem("auth_token");
             
+        const idToSend = storedPlan ? packagesData.find(p => p.name === storedPlan) : null;
+        selectPackage(idToSend ? idToSend.id || 0 : 0);
             // a) Authentication kontrolü
             if (!authToken) {
                  // setIsUserAuthenticated(false); 
