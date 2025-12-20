@@ -54,7 +54,7 @@ export default function SignUp() {
     setError("");
 
     try {
-      const res = await fetch(`/api/auth?action=google`, { // Updated to match your single endpoint logic
+      const res = await fetch(`/api/auth/auth?action=google`, { // Updated to match your single endpoint logic
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ credential: response.credential }),
@@ -84,7 +84,7 @@ export default function SignUp() {
     setError("");
 
     try {
-      const res = await fetch(`/api/auth?action=register`, {
+      const res = await fetch(`/api/auth/auth?action=register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

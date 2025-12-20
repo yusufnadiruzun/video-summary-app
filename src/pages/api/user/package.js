@@ -1,113 +1,110 @@
-// src/pages/api/user/package.js
-import db from "../../../../lib/Db"; // Doğru yolu kontrol edin
-import { authenticate } from "../../../../lib/authMiddleware"; // authMiddleware'den dönüştürdüğümüz fonksiyon
+import db from "../../../../lib/Db";
+import { authenticate } from "../../../../lib/authMiddleware";
 
 export default async function handler(req, res) {
-  // 1. Kimlik Doğrulama (Middleware)
-  // Express'teki 'authMiddleware' karşılığı:
   const isAuthenticated = authenticate(req, res);
-  
-  // Eğer doğrulama başarısızsa (authenticate false döndüyse ve yanıtı gönderdiyse), işlemi durdur.
-  if (!isAuthenticated) {
-    return;
-  }
-  
-  // Kimlik doğrulandıktan sonra, req.userId kullanılabilir.
-  const userId = req.userId; 
+  if (!isAuthenticated) return;
+  const userId = req.userId;
 
   try {
     switch (req.method) {
-      
-      // -------------------------------------------------------------------------
-      // 📌 GET /api/user/package
-      // -------------------------------------------------------------------------
-      case 'GET':
+      case "GET":
         const [pkg] = await db.execute(
-          `SELECT p.package_type, p.Name, p.Price, up.Package_Status, up.Start_Date, up.End_Date
-            FROM user_packages up
-            JOIN packages p ON up.package_type = p.package_type
-            WHERE up.user_id = ?`,
+          `SELECT up.packageId, p.Name, p.Price, up.package_status_id, up.Start_Date, up.End_Date, up.selected_package_id
+           FROM user_packages up
+           LEFT JOIN packages p ON up.packageId = p.id
+           WHERE up.user_id = ?`,
           [userId]
         );
 
         if (!pkg.length) return res.status(404).json({ error: "Paket bulunamadı" });
 
         const data = pkg[0];
-
         // Süre dolmuşsa status reset
         if (data.End_Date && new Date(data.End_Date) < new Date()) {
-          await db.execute(`UPDATE user_packages SET Package_Status=1 WHERE user_id=?`, [userId]);
-          data.Package_Status = 1;
+          await db.execute(
+            `UPDATE user_packages SET package_status_id=1 WHERE user_id=?`,
+            [userId]
+          );
+          data.package_status_id = 1;
         }
-
         return res.json(data);
-        
-      // -------------------------------------------------------------------------
-      // 📌 POST - Paket seçimi ve Ödeme akışı (URL'ye göre ayrım)
-      // -------------------------------------------------------------------------
-      case 'POST':
-        // URL yolunu kontrol ediyoruz. Örn: /api/user/package?action=select
-        const { action } = req.query; 
-        const { packageId, package_id } = req.body;
+
+      case "POST":
+        const { action } = req.query;
+        const { packageId } = req.body; 
 
         switch (action) {
-          
-          // POST /api/user/package?action=select
-          case 'select':
+          case "select":
             await db.execute(
-              `UPDATE user_packages SET package_type=?, Package_Status=1 WHERE user_id=?`,
+              `UPDATE user_packages SET selected_package_id=?, package_status_id=1 WHERE user_id=?`,
               [packageId, userId]
             );
-            return res.json({ message: "Paket seçildi, ödeme bekleniyor", status: 1 });
+            return res.json({ message: "Paket seçildi", status: 1 });
 
-          // POST /api/user/package?action=pay-success
-          case 'pay-success':
+          case "pay-success":
             const startDate = new Date();
             const endDate = new Date();
             endDate.setDate(endDate.getDate() + 30);
 
-            const [pkgSuccess] = await db.execute(
-              "SELECT * FROM user_packages WHERE user_id=?",
+            // 1. Mevcut seçili paketi bul
+            const [row] = await db.execute(
+              "SELECT selected_package_id FROM user_packages WHERE user_id=?",
               [userId]
             );
+            const finalId = packageId || row[0]?.selected_package_id;
 
-            // ❗ KAYIT YOKSA → İLK KEZ SATIN ALIYOR
-            if(pkgSuccess.length === 0){
-              await db.execute(
-                `INSERT INTO user_packages (user_id, package_type, Start_Date, End_Date, Package_Status)
-                 VALUES (?, ?, ?, ?, ?)`,
-                [userId, package_id, startDate, endDate, 2] // 2 = Payment Success
-              );
+            // 2. user_packages tablosunu güncelle
+            await db.execute(
+              `UPDATE user_packages 
+               SET packageId=?, package_status_id=2, Start_Date=?, End_Date=? 
+               WHERE user_id=?`,
+              [finalId, startDate, endDate, userId]
+            );
 
-              return res.json({msg:"İlk paket kaydı oluşturuldu", startDate, endDate});
+            // 3. YENİ MANTIĞA GÖRE BİLDİRİM BİLGİLERİNİ notifications TABLOSUNA YAZ
+            const { deliveryChannel, deliveryId } = req.body;
+
+            if (deliveryChannel && deliveryId) {
+              let emailVal = deliveryChannel === "Email" ? deliveryId : null;
+              let tgIdVal = deliveryChannel === "Telegram" ? deliveryId : null;
+
+              try {
+                // NOTIFICATIONS tablosuna user_id UNIQUE olduğu için ON DUPLICATE KEY kullandık
+                await db.execute(
+                  `INSERT INTO notifications (user_id, notification_email, telegram_chat_id) 
+                   VALUES (?, ?, ?)
+                   ON DUPLICATE KEY UPDATE 
+                   notification_email = COALESCE(?, notification_email), 
+                   telegram_chat_id = COALESCE(?, telegram_chat_id)`,
+                  [userId, emailVal, tgIdVal, emailVal, tgIdVal]
+                );
+                
+                console.log(`Bildirim ayarları notifications tablosuna kaydedildi: User ${userId}`);
+              } catch (err) {
+                console.error("Notifications kayıt hatası:", err);
+              }
             }
 
-            // ✔ KAYIT VARSA → PAKET YENİLENİYOR
-            await db.execute(
-              `UPDATE user_packages SET package_type=?, Start_Date=?, End_Date=?, Package_Status=? WHERE user_id=?`,
-              [package_id, startDate, endDate, 2, userId]
-            );
+            return res.json({ message: "Ödeme başarılı ✅", status: 2 });
 
-            return res.json({msg:"Paket yenilendi", startDate, endDate});
-
-          // POST /api/user/package?action=pay-failed
-          case 'pay-failed':
+          case "pay-failed":
             await db.execute(
-              `UPDATE user_packages SET package_type=?, Package_Status=3 WHERE user_id=?`,
-              [packageId, userId]
+              `UPDATE user_packages SET package_status_id=3 WHERE user_id=?`,
+              [userId]
             );
-            return res.json({ message:"Ödeme başarısız ❌", status:3 });
-            
+            return res.json({ message: "Ödeme başarısız ❌", status: 3 });
+
           default:
-            return res.status(404).json({ error: "Geçersiz paket işlemi rotası." });
+            return res.status(404).json({ error: "Geçersiz işlem." });
         }
-        
+
       default:
-        res.setHeader('Allow', ['GET', 'POST']);
+        res.setHeader("Allow", ["GET", "POST"]);
         return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
   } catch (e) {
-    console.error("Paket API hatası:", e);
-    return res.status(500).json({ error: "Sunucu hatası. İşlem tamamlanamadı." });
+    console.error("Paket/Abonelik API Hatası:", e);
+    return res.status(500).json({ error: "Sunucu hatası." });
   }
 }

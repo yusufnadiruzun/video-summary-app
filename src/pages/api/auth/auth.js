@@ -16,9 +16,6 @@ export default async function handler(req, res) {
 
   try {
     switch (action) {
-      // -------------------------------------------------------------------------
-      // 📌 REGISTER
-      // -------------------------------------------------------------------------
       case 'register':
         const hash = await bcrypt.hash(password, 10);
         const [result] = await db.execute(
@@ -26,36 +23,24 @@ export default async function handler(req, res) {
           [name || null, email, hash]
         );
 
+        // Yeni şema: packageId=1 (Free), package_status_id=2 (Aktif)
         await db.execute(`
-          INSERT INTO user_packages (user_id, package_type, Package_Status, Start_Date, End_Date)
-          VALUES (?, 'free', 1, CURDATE(), NULL)
+          INSERT INTO user_packages (user_id, packageId, package_status_id, Start_Date, End_Date)
+          VALUES (?, 1, 2, CURDATE(), NULL)
         `, [result.insertId]);
 
         return res.status(201).json({ message: "Registration successful" });
 
-      // -------------------------------------------------------------------------
-      // 📌 LOGIN (Email & Password)
-      // -------------------------------------------------------------------------
       case 'login':
-        // 🔥 DÜZELTME: is_admin sütununu da seçiyoruz
         const [u] = await db.execute("SELECT id, password_hash, is_admin FROM users WHERE email=?", [email]);
-        
-        if (!u.length) {
-          return res.status(404).json({ error: "User not found" });
-        }
+        if (!u.length) return res.status(404).json({ error: "User not found" });
 
         const user = u[0];
-        
-        if (!user.password_hash) {
-          return res.status(403).json({ error: "No password set for this account. Use Google Sign-In." });
-        }
+        if (!user.password_hash) return res.status(403).json({ error: "No password set. Use Google Sign-In." });
 
         const match = await bcrypt.compare(password, user.password_hash);
-        if (!match) {
-          return res.status(403).json({ error: "Invalid password" });
-        }
+        if (!match) return res.status(403).json({ error: "Invalid password" });
 
-        // 🔥 DÜZELTME: Token içine isAdmin eklendi
         const token = jwt.sign(
           { userId: user.id, isAdmin: user.is_admin === 1 }, 
           JWT_SECRET, 
@@ -63,56 +48,56 @@ export default async function handler(req, res) {
         );
         return res.json({ token, isAdmin: user.is_admin === 1 });
         
-      // -------------------------------------------------------------------------
-      // 📌 GOOGLE LOGIN
-      // -------------------------------------------------------------------------
-      case 'google':
-        const google = await axios.get(
-          `https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=${credential}`
-        );
-
-        const { email: googleEmail, name: googleName, picture, sub } = google.data;
+     case 'google':
+        const google = await axios.get(`https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=${credential}`);
+        const { email: gEmail, name: gName, picture, sub } = google.data;
         let userId;
         let isAdminStatus = false;
 
-        // 🔥 DÜZELTME: is_admin sütununu da seçiyoruz
-        const [existingUser] = await db.execute("SELECT id, is_admin FROM users WHERE email=?", [googleEmail]);
+        // 1. Kullanıcı var mı kontrol et
+        const [existingUser] = await db.execute("SELECT id, is_admin FROM users WHERE email=?", [gEmail]);
 
-        if (existingUser.length) {
+        if (existingUser.length > 0) {
             userId = existingUser[0].id;
             isAdminStatus = existingUser[0].is_admin === 1;
+
+            // ÖNEMLİ: Eğer kullanıcı users tablosunda var ama user_packages tablosunda yoksa diye 
+            // burada bir kontrol/ekleme yapmak garantiye alır.
+            const [hasPackage] = await db.execute("SELECT id FROM user_packages WHERE user_id=?", [userId]);
+            if (hasPackage.length === 0) {
+                await db.execute(`
+                    INSERT INTO user_packages (user_id, packageId, package_status_id, Start_Date, End_Date, daily_limit, daily_used)
+                    VALUES (?, 1, 2, CURDATE(), NULL, 3, 0)
+                `, [userId]);
+            }
         } 
         else {
+            // 2. Yeni kullanıcı oluştur
             const [ins] = await db.execute(
-                `INSERT INTO users (email,name,google_sub,avatar) VALUES (?,?,?,?)`,
-                [googleEmail, googleName, sub, picture]
+                `INSERT INTO users (email, name, google_sub, avatar) VALUES (?,?,?,?)`,
+                [gEmail, gName, sub, picture]
             );
             userId = ins.insertId;
 
+            // 3. Paket kaydını hemen oluştur (Veri düşmüyorsa buradaki DEFAULT değerleri açıkça yazalım)
             await db.execute(`
-                INSERT INTO user_packages (user_id, package_type, Package_Status, Start_Date, End_Date)
-                VALUES (?, 'free', 1, CURDATE(), NULL)
+                INSERT INTO user_packages (user_id, packageId, package_status_id, Start_Date, End_Date, daily_limit, daily_used)
+                VALUES (?, 1, 2, CURDATE(), NULL, 3, 0)
             `, [userId]);
+            
+            console.log(`Yeni Google kullanıcısı ve paketi oluşturuldu. UserID: ${userId}`);
         }
 
-        // 🔥 DÜZELTME: Token içine isAdmin eklendi
-        const googleToken = jwt.sign(
-          { userId, isAdmin: isAdminStatus }, 
-          JWT_SECRET, 
-          { expiresIn: "30d" }
-        );
-        return res.json({ token: googleToken, isAdmin: isAdminStatus });
+        const gToken = jwt.sign({ userId, isAdmin: isAdminStatus }, JWT_SECRET, { expiresIn: "30d" });
+        return res.json({ token: gToken, isAdmin: isAdminStatus });
 
-      // -------------------------------------------------------------------------
-      // 📌 GUEST LOGIN
-      // -------------------------------------------------------------------------
+      // ... guest kısmı aynı ...
       case 'guest':
         const guestMail = `guest_${Date.now()}@local`;
         const [usr] = await db.execute(`INSERT INTO users (email) VALUES (?)`, [guestMail]);
-
         await db.execute(`
-            INSERT INTO user_packages (user_id, package_type, Package_Status, Start_Date, End_Date)
-            VALUES (?, 'guest', 1, CURDATE(), NULL)
+            INSERT INTO user_packages (user_id, packageId, package_status_id, Start_Date, End_Date, daily_limit, daily_used)
+            VALUES (?, 1, 2, CURDATE(), NULL, 3, 0)
         `, [usr.insertId]);
 
         const guestToken = jwt.sign({ userId: usr.insertId, guest: true, isAdmin: false }, JWT_SECRET, { expiresIn: "30d" });
@@ -122,10 +107,7 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: "Invalid auth action." });
     }
   } catch (err) {
-    console.error("Auth Error:", err);
-    if (action === 'register' && err.code === 'ER_DUP_ENTRY') {
-        return res.status(400).json({ error: "Email already registered." });
-    }
+    console.error("Auth Error Detail:", err); // Hatayı terminalde daha detaylı gör
     return res.status(500).json({ error: "Internal server error." });
   }
 }
