@@ -3,11 +3,13 @@ import { authenticate } from "../../../../lib/authMiddleware";
 import { getLatestVideo } from "../../../../lib/services/youtubeService";
 
 export default async function handler(req, res) {
+  // 1. Kimlik Doğrulama
   const isAuthenticated = authenticate(req, res);
   if (!isAuthenticated) return;
 
   const userId = req.userId;
 
+  // --- KANAL EKLEME (POST) ---
   if (req.method === "POST") {
     const { channelId } = req.body;
 
@@ -16,77 +18,81 @@ export default async function handler(req, res) {
     }
 
     try {
-      // 1. Kullanıcın paket limitini kontrol et (Kaç kanal ekleyebilir?)
+      // A. Kullanıcının paket bilgisini çek
       const [userPkg] = await db.execute(
         `SELECT selected_package_id FROM user_packages WHERE user_id = ?`,
         [userId]
       );
 
+      // B. Mevcut aktif kanal sayısını say (default_channel'ları hariç tutuyoruz)
       const [currentSubs] = await db.execute(
-        `SELECT COUNT(*) as count FROM subscriptions WHERE user_id = ? AND channel_id != 'default_channel'`,
+        `SELECT COUNT(*) as count FROM subscriptions 
+         WHERE user_id = ? AND channel_id NOT IN ('default', 'default_channel')`,
         [userId]
       );
 
-      // Basit limit kontrolü (Örn: Starter: 1, Pro: 5, Premium: Sınırsız)
-      const packageId = userPkg[0]?.selected_package_id;
+      const packageId = userPkg[0]?.selected_package_id || 1; // Default 1 (Free)
       const subCount = currentSubs[0].count;
 
-      if (packageId === 2 && subCount >= 1)
-        return res
-          .status(403)
-          .json({ msg: "Starter paketi limitine ulaştınız (1 Kanal)." });
-      if (packageId === 3 && subCount >= 5)
-        return res
-          .status(403)
-          .json({ msg: "Pro paketi limitine ulaştınız (5 Kanal)." });
+      // C. KESİN LİMİT KONTROLÜ
+      // Paket ID'leri: 1: Free (0 kanal), 2: Starter (1 kanal), 3: Pro (5 kanal), 4: Premium (Sınırsız/100)
+      let limit = 0;
+      if (packageId === 2) limit = 1;
+      else if (packageId === 3) limit = 5;
+      else if (packageId === 4) limit = 100; // Premium için yüksek bir sınır
 
-      // 2. Kanalın şu anki en son videosunu YouTube'dan çek (Sistemi tetiklemek için
-      // 3. Kullanıcının ana bildirim ayarlarını al (Telegram/Email)
-      // Yeni kanal kaydederken bildirimlerin nereye gideceğini bilmemiz lazım.
-      const [mainSettings] = await db.execute(
-        `SELECT notification_email, telegram_chat_id FROM subscriptions 
-                 WHERE user_id = ? AND channel_id = 'default_channel' LIMIT 1`,
-        [userId]
-      );
-      console.log("Kullanıcı ana bildirim ayarları:", mainSettings);
-      // 4. Veritabanına yeni aboneliği ekle
+      if (subCount >= limit && packageId !== 4) {
+        return res.status(403).json({ 
+          success: false, 
+          msg: `Paket limitine ulaştınız. ${packageId === 2 ? 'Starter (1)' : 'Pro (5)'} kanal hakkınız doldu.` 
+        });
+      }
+
+    
       await db.execute(
-        `INSERT INTO subscriptions (user_id, channel_id) 
-     VALUES (?, ?)`,
-        [
-          userId,
-          channelId,
-           // getLatestVideo'dan gelen ID
-        ]
+        `INSERT INTO subscriptions (user_id, channel_id) VALUES (?, ?)`,
+        [userId, channelId]
       );
 
-      return res
-        .status(200)
-        .json({ success: true, msg: "Kanal başarıyla takibe alındı." });
+      return res.status(200).json({ 
+        success: true, 
+        msg: "Kanal başarıyla takibe alındı." 
+      });
+
     } catch (error) {
       console.error("Kanal Ekleme Hatası:", error);
       if (error.code === "ER_DUP_ENTRY") {
-        return res
-          .status(400)
-          .json({ success: false, msg: "Bu kanal zaten takibinizde." });
+        return res.status(400).json({ success: false, msg: "Bu kanal zaten listenizde bulunuyor." });
       }
-      return res.status(500).json({ success: false, msg: "Kanal eklenemedi." });
+      return res.status(500).json({ success: false, msg: "Sunucu hatası: Kanal eklenemedi." });
     }
   }
 
-  // Kanal Silme (DELETE)
+  // --- KANAL SİLME (DELETE) ---
   if (req.method === "DELETE") {
-    const { id } = req.query; // subscription_id
+    const { id } = req.query; // URL'den gelen subscription id
+
+    if (!id) {
+      return res.status(400).json({ success: false, msg: "Silinecek abonelik ID'si gerekli." });
+    }
+
     try {
-      await db.execute(
+      const [result] = await db.execute(
         `DELETE FROM subscriptions WHERE id = ? AND user_id = ?`,
         [id, userId]
       );
-      return res
-        .status(200)
-        .json({ success: true, msg: "Kanal takibi bırakıldı." });
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ success: false, msg: "Kanal bulunamadı veya yetkiniz yok." });
+      }
+
+      return res.status(200).json({ success: true, msg: "Kanal takibi başarıyla bırakıldı." });
     } catch (error) {
-      return res.status(500).json({ success: false, msg: "Silme hatası." });
+      console.error("Kanal Silme Hatası:", error);
+      return res.status(500).json({ success: false, msg: "Silme işlemi sırasında hata oluştu." });
     }
   }
+
+  // Yanlış metod isteği
+  return res.status(405).json({ msg: "Metod izin verilmedi." });
 }

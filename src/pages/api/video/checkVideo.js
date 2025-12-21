@@ -84,7 +84,7 @@ export default async function handler(req, res) {
 
         // --- 5. KOŞULLU BİLDİRİM GÖNDERME ---
         const sendPromises = [];
-
+        
         // A) TELEGRAM BİLDİRİMİ (telegram_chat_id değeri varsa)
         if (sub.telegram_chat_id) {
           console.log(
@@ -100,17 +100,17 @@ export default async function handler(req, res) {
           );
         }
 
-        // B) E-POSTA BİLDİRİMİ (notification_email değeri varsa)
-        if (sub.notification_email) {
-          sendPromises.push(
-            sendEmail(
-              latestVideo,
-              latestVideo.id,
-              summary,
-              sub.notification_email
-            )
-          );
-        }
+        // // B) E-POSTA BİLDİRİMİ (notification_email değeri varsa)
+        // if (sub.notification_email) {
+        //   sendPromises.push(
+        //     sendEmail(
+        //       latestVideo,
+        //       latestVideo.id,
+        //       summary,
+        //       sub.notification_email
+        //     )
+        //   );
+        // }
 
         // C) WHATSAPP BİLDİRİMİ (whatsapp_phone değeri varsa)
         if (sub.whatsapp_phone) {

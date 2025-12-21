@@ -13,7 +13,7 @@ const SuccessPage = () => {
 
         const finalizeTransaction = async () => {
             try {
-                // 1. Ödeme Onayı ve Paket Tanımlama + Bildirim Bilgilerini Kaydetme
+                // 1. Payment Confirmation, Plan Activation + Notification Settings
                 const response = await fetch('/api/user/package?action=pay-success', {
                     method: 'POST',
                     headers: { 
@@ -22,7 +22,6 @@ const SuccessPage = () => {
                     },
                     body: JSON.stringify({ 
                         packageId: packageId,
-                        // URL'den gelen verileri gövdeye ekledik
                         deliveryChannel: deliveryChannel, 
                         deliveryId: deliveryId 
                     })
@@ -30,13 +29,13 @@ const SuccessPage = () => {
 
                 if (response.ok) {
                     setStatus('success');
-                    // 3 saniye sonra profile yönlendir
+                    // Redirect to profile after 3 seconds
                     setTimeout(() => router.replace('/profile'), 3000);
                 } else {
                     setStatus('error');
                 }
             } catch (error) {
-                console.error("İşlem hatası:", error);
+                console.error("Transaction error:", error);
                 setStatus('error');
             }
         };
@@ -51,20 +50,20 @@ const SuccessPage = () => {
                 {status === 'processing' && (
                     <div className="animate-pulse">
                         <Clock className="w-16 h-16 text-cyan-400 mx-auto animate-spin mb-4" />
-                        <h1 className="text-2xl font-bold">Hesabınız Yapılandırılıyor...</h1>
-                        <p className="text-gray-400 text-sm mt-2">Ödemeniz onaylandı, ayarlarınız kaydediliyor.</p>
+                        <h1 className="text-2xl font-bold">Configuring Your Account...</h1>
+                        <p className="text-gray-400 text-sm mt-2">Payment confirmed. We are setting up your workspace.</p>
                     </div>
                 )}
 
                 {status === 'success' && (
                     <div className="space-y-4">
                         <CheckCircle className="w-20 h-20 text-green-400 mx-auto mb-2" />
-                        <h1 className="text-3xl font-black tracking-tight">HER ŞEY HAZIR!</h1>
+                        <h1 className="text-3xl font-black tracking-tight">YOU'RE ALL SET!</h1>
                         <p className="text-gray-300">
-                            <span className="text-cyan-400 font-bold">{plan}</span> paketiniz ve bildirim tercihleriniz başarıyla tanımlandı.
+                            Your <span className="text-cyan-400 font-bold">{plan}</span> plan and notification preferences have been successfully activated.
                         </p>
-                        <div className="text-xs text-gray-500 pt-4">
-                            Profil sayfanıza yönlendiriliyorsunuz...
+                        <div className="text-xs text-gray-500 pt-4 italic">
+                            Redirecting you to your profile...
                         </div>
                     </div>
                 )}
@@ -72,9 +71,14 @@ const SuccessPage = () => {
                 {status === 'error' && (
                     <div className="space-y-4">
                         <AlertCircle className="w-16 h-16 text-red-500 mx-auto" />
-                        <h1 className="text-2xl font-bold">Bir Hata Oluştu</h1>
-                        <p className="text-gray-400 text-sm">Paketiniz tanımlanırken bir sorun çıktı. Lütfen destekle iletişime geçin.</p>
-                        <button onClick={() => router.replace('/')} className="px-6 py-2 bg-white/10 rounded-lg hover:bg-white/20 transition">Ana Sayfa</button>
+                        <h1 className="text-2xl font-bold">Something Went Wrong</h1>
+                        <p className="text-gray-400 text-sm">There was an issue activating your plan. Please contact our support team.</p>
+                        <button 
+                            onClick={() => router.replace('/')} 
+                            className="px-6 py-2 bg-white/10 rounded-xl hover:bg-white/20 transition border border-white/5"
+                        >
+                            Back to Home
+                        </button>
                     </div>
                 )}
             </div>
