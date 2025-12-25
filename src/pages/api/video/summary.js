@@ -36,8 +36,8 @@ export default async function handler(req, res) {
 
     // 3. Transkript Al
     let transcript = await getTranscriptSafe(videoId, pkgId);
-
-    if (transcript === 'TRANSCRIPT_NOT_AVAILABLE_FOR_FREE') {
+    console.log("Transcript fetched:", transcript);
+    if (transcript === 'TRANSCRIPT_NOT_AVAILABLE') {
       return res.status(403).json({ error: "Upgrade to Pro/Premium for this video's transcription." });
     }
 

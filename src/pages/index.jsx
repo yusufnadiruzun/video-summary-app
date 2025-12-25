@@ -145,40 +145,52 @@ const Home = () => {
       const tokenToUse = auth_token || guest_token;
 
       try {
-        const response = await fetch(apiRoute, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(tokenToUse ? { Authorization: `Bearer ${tokenToUse}` } : {}),
-          },
-          body: JSON.stringify({
-            videoId: id,
-            summaryType: "short",
-            keywords: keywords.trim(),
-          }),
-        });
+  setLoading(true); // Yükleniyor durumunu başlatmayı unutmayın
+  setError("");     // Eski hataları temizleyin
 
-        if (!response.ok) {
-          if (response.status === 403) {
-            setShowModal(true);
-            return;
-          }
+  const response = await fetch(apiRoute, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(tokenToUse ? { Authorization: `Bearer ${tokenToUse}` } : {}),
+    },
+    body: JSON.stringify({
+      videoId: id,
+      summaryType: "short",
+      keywords: keywords.trim(),
+    }),
+  });
 
-          const errorData = await response
-            .json()
-            .catch(() => ({ error: "Unknown server error." }));
-          throw new Error(errorData.error || `Failed: ${response.status}`);
-        }
+  // Backend'den gelen hata durumlarını kontrol et
+  if (!response.ok) {
+    const errorData = await response
+      .json()
+      .catch(() => ({ error: "Bilinmeyen bir hata oluştu." }));
 
-        const data = await response.json();
-        setSummary(data.summary || JSON.stringify(data, null, 2));
-      } catch (error) {
-        console.error("API çağrısında hata:", error.message);
-        setError(error.message);
-        setSummary("");
-      } finally {
-        setLoading(false);
-      }
+    // --- TRANSKRİPT YOK VEYA PAKET YETERSİZ (403 DURUMU) ---
+    if (response.status === 403) {
+      // Backend'den gelen "Upgrade to Pro/Premium..." mesajını setError'a basabilir 
+      // veya doğrudan modalı açabilirsiniz.
+      setError("Transcript is not available. " + errorData.error); 
+     // setShowModal(true); // Paket yükseltme modalını tetikler
+      return; 
+    }
+
+    // Diğer hata durumları (500, 401, 405 vs.)
+    throw new Error(errorData.error || `Hata: ${response.status}`);
+  }
+
+  // Başarılı durum
+  const data = await response.json();
+  setSummary(data.summary || JSON.stringify(data, null, 2));
+
+} catch (error) {
+  console.error("API çağrısında hata:", error.message);
+  setError(error.message);
+  setSummary("");
+} finally {
+  setLoading(false);
+}
     },
     [videoId, isAuthenticated, keywords]
   );
