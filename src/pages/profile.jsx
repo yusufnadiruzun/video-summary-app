@@ -16,7 +16,9 @@ import {
   X,
   FileText,
   AlertCircle,
-  Info
+  Info,
+  Download,
+  Share2
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -87,19 +89,49 @@ const LimitModal = ({ isOpen, onClose, plan, limit }) => {
   );
 };
 
-// --- 4. SUMMARY CONTENT MODAL ---
+// --- 4. SUMMARY MODAL (WITH DOWNLOAD & SHARE) ---
 const SummaryModal = ({ isOpen, onClose, summary }) => {
   if (!isOpen || !summary) return null;
+
+  const handleDownload = () => {
+    const element = document.createElement("a");
+    const file = new Blob([summary.summary], { type: 'text/plain' });
+    element.href = URL.createObjectURL(file);
+    element.download = `${summary.title.replace(/\s+/g, '_')}_Summary.txt`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: summary.title, text: summary.summary });
+      } catch (err) { console.log("Share failed:", err); }
+    } else {
+      navigator.clipboard.writeText(summary.summary);
+      alert("Copied to clipboard!");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-      <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="bg-slate-900 border border-white/10 rounded-[2rem] max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+      <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="bg-slate-900 border border-white/10 rounded-[2rem] max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
         <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
-          <div className="flex items-center gap-3"><FileText className="text-cyan-400" /><h3 className="text-lg font-bold text-white truncate">{summary.title}</h3></div>
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition"><X /></button>
+          <div className="flex items-center gap-3 overflow-hidden">
+            <FileText className="text-cyan-400 shrink-0" />
+            <h3 className="text-lg font-bold text-white truncate">{summary.title}</h3>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 ml-4">
+            <button onClick={handleDownload} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition text-cyan-400"><Download size={14} /> Download</button>
+            <button onClick={handleShare} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition text-purple-400"><Share2 size={14} /> Share</button>
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition text-gray-400"><X size={20} /></button>
+          </div>
         </div>
-        <div className="p-8 overflow-y-auto custom-scrollbar text-gray-300 leading-relaxed whitespace-pre-wrap">{summary.summary}</div>
-        <div className="p-6 border-t border-white/10 flex justify-center">
-            <button onClick={onClose} className="px-10 py-3 bg-white text-black font-bold rounded-xl transition hover:bg-cyan-400">Close</button>
+        <div className="p-8 overflow-y-auto custom-scrollbar text-gray-300 leading-relaxed whitespace-pre-wrap text-sm md:text-base">{summary.summary}</div>
+        <div className="p-4 border-t border-white/10 flex justify-between items-center bg-white/5 text-[10px] text-gray-500 font-bold uppercase">
+            <span>Channel: {summary.channel}</span>
+            <span>Date: {summary.date}</span>
         </div>
       </motion.div>
     </div>
@@ -115,7 +147,6 @@ const Profile = () => {
   const [tempNotif, setTempNotif] = useState({ email: "", telegram: "" });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
-  // Modals & Notifications State
   const [notification, setNotification] = useState({ message: "", type: "" });
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [selectedSummary, setSelectedSummary] = useState(null);
@@ -157,16 +188,9 @@ const Profile = () => {
         setNotification({ message: data.msg, type: "success" });
         setChannelId("");
         fetchProfile();
-      } else if (res.status === 403) {
-        setShowLimitModal(true);
-      } else {
-        setNotification({ message: data.msg || "Error", type: "error" });
-      }
+      } else if (res.status === 403) { setShowLimitModal(true); } 
+      else { setNotification({ message: data.msg || "Error", type: "error" }); }
     } catch (err) { setNotification({ message: "Connection error.", type: "error" }); }
-  };
-
-  const openDeleteModal = (id, name) => {
-    setDeleteModal({ isOpen: true, channelId: id, channelName: name });
   };
 
   const confirmDelete = async () => {
@@ -176,11 +200,11 @@ const Profile = () => {
         headers: { authorization: `Bearer ${localStorage.getItem("auth_token")}` }
       });
       if (res.ok) {
-        setNotification({ message: "Channel removed successfully.", type: "success" });
+        setNotification({ message: "Channel removed.", type: "success" });
         setDeleteModal({ isOpen: false, channelId: null, channelName: "" });
         fetchProfile();
       }
-    } catch (err) { setNotification({ message: "Could not remove channel.", type: "error" }); }
+    } catch (err) { setNotification({ message: "Failed to remove.", type: "error" }); }
   };
 
   if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white italic">Loading Profile...</div>;
@@ -201,34 +225,27 @@ const Profile = () => {
           <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" /> Back to Dashboard
         </Link>
 
-        {/* Account Status Card */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
           <div className="lg:col-span-2 bg-white/5 backdrop-blur-2xl border border-white/10 p-8 rounded-[2.5rem] relative overflow-hidden">
             <div className="absolute top-0 right-0 p-8 opacity-10"><Zap size={100} /></div>
             <p className="text-cyan-400 text-xs font-bold uppercase tracking-widest mb-2">Account Status</p>
             <h2 className="text-5xl font-black mb-4">{userData?.package} Plan</h2>
             <div className="flex gap-4 text-sm text-gray-300">
-              <span className="bg-white/5 px-4 py-1 rounded-full border border-white/10 flex items-center gap-2"><Calendar size={14} className="text-purple-400" /> Ends: {userData?.endDate}</span>
+              <span className="bg-white/5 px-4 py-1 rounded-full border border-white/10 flex items-center gap-2 font-medium"><Calendar size={14} className="text-purple-400" /> Ends: {userData?.endDate}</span>
             </div>
           </div>
 
-          {/* Settings Card */}
           <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-8 rounded-[2.5rem]">
-            <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-green-400"><CheckCircle size={20} /> Notification Settings</h3>
+            <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-green-400"><CheckCircle size={20} /> Settings</h3>
             <div className="space-y-4">
               <div>
-                <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Email Address</label>
+                <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Email</label>
                 <div className="bg-black/30 border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-500 truncate">{tempNotif.email}</div>
               </div>
               <div>
-                <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Telegram Notifications</label>
+                <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Telegram</label>
                 <div className="relative">
-                  <input 
-                    disabled={!hasTelegramAccess} 
-                    value={tempNotif.telegram} 
-                    placeholder={hasTelegramAccess ? "@username" : "Upgrade to Pro"}
-                    className={`w-full bg-black/30 border border-white/10 rounded-xl px-4 py-2 text-sm ${!hasTelegramAccess && "opacity-40 cursor-not-allowed"}`} 
-                  />
+                  <input disabled={!hasTelegramAccess} value={tempNotif.telegram} placeholder={hasTelegramAccess ? "@username" : "Upgrade to Pro"} className={`w-full bg-black/30 border border-white/10 rounded-xl px-4 py-2 text-sm ${!hasTelegramAccess && "opacity-40 cursor-not-allowed"}`} />
                   {!hasTelegramAccess && <div className="absolute right-3 top-2.5 flex items-center gap-1 text-amber-500"><Lock size={14} /><span className="text-[10px] font-bold uppercase">Locked</span></div>}
                 </div>
               </div>
@@ -237,26 +254,24 @@ const Profile = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 text-left">
-          {/* Followed Channels Section */}
           <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem]">
-            <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-red-500"><Youtube /> Followed Channels</h3>
+            <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-red-500"><Youtube /> Channels</h3>
             <div className="flex gap-2 mb-6">
-              <input value={channelId} onChange={(e) => setChannelId(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAddChannel()} placeholder="Channel name (e.g. mrbeast)" className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500/50" />
+              <input value={channelId} onChange={(e) => setChannelId(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAddChannel()} placeholder="e.g. @mrbeast" className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500/50" />
               <button onClick={handleAddChannel} className="bg-white text-black px-6 rounded-xl font-bold hover:bg-cyan-400 transition">Add</button>
             </div>
             <div className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar pr-2">
               {userData?.activeChannels.map((ch) => (
                 <div key={ch.id} className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition group">
                   <span className="text-sm font-medium">{ch.channelId}</span>
-                  <button onClick={() => openDeleteModal(ch.id, ch.channelId)} className="text-gray-500 hover:text-red-500 transition p-2"><Trash2 size={18} /></button>
+                  <button onClick={() => setDeleteModal({ isOpen: true, channelId: ch.id, channelName: ch.channelId })} className="text-gray-500 hover:text-red-500 transition p-2"><Trash2 size={18} /></button>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* History Section */}
           <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem]">
-            <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-cyan-400"><History /> Summary History</h3>
+            <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-cyan-400"><History /> History</h3>
             <div className="space-y-4 max-h-80 overflow-y-auto custom-scrollbar pr-2">
               {userData?.history.map((item) => (
                 <button key={item.id} onClick={() => setSelectedSummary(item)} className="w-full text-left p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-cyan-500/50 hover:bg-white/10 transition group">
