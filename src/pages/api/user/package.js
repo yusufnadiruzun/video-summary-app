@@ -1,3 +1,4 @@
+// pages/api/user/package.js (veya ilgili API dosyan)
 import db from "../../../../lib/Db";
 import { authenticate } from "../../../../lib/authMiddleware";
 
@@ -10,29 +11,28 @@ export default async function handler(req, res) {
     switch (req.method) {
       case "GET":
         const [pkg] = await db.execute(
-          `SELECT up.packageId, p.Name, p.Price, up.package_status_id, up.Start_Date, up.End_Date, up.selected_package_id
-           FROM user_packages up
-           LEFT JOIN packages p ON up.packageId = p.id
-           WHERE up.user_id = ?`,
+          `SELECT * FROM user_packages where user_id = ?`,
           [userId]
         );
 
         if (!pkg.length) return res.status(404).json({ error: "Paket bulunamadı" });
 
         const data = pkg[0];
-        // Süre dolmuşsa status reset
+        // Süre dolmuşsa status reset (Paketi Free'ye yani ID 1'e çekiyoruz)
         if (data.End_Date && new Date(data.End_Date) < new Date()) {
           await db.execute(
-            `UPDATE user_packages SET package_status_id=1 WHERE user_id=?`,
+            `UPDATE user_packages SET packageId=1, package_status_id=1, daily_limit=1 WHERE user_id=?`,
             [userId]
           );
           data.package_status_id = 1;
+          data.packageId = 1;
+          data.daily_limit = 1;
         }
         return res.json(data);
 
       case "POST":
         const { action } = req.query;
-        const { packageId } = req.body; 
+        const { packageId, deliveryChannel, deliveryId } = req.body; 
 
         switch (action) {
           case "select":
@@ -45,32 +45,42 @@ export default async function handler(req, res) {
           case "pay-success":
             const startDate = new Date();
             const endDate = new Date();
-            endDate.setDate(endDate.getDate() + 30);
+            endDate.setDate(endDate.getDate() + 30); // 30 günlük abonelik
 
-            // 1. Mevcut seçili paketi bul
+            // 1. Mevcut seçili paketi veya gelen paket ID'sini belirle
             const [row] = await db.execute(
               "SELECT selected_package_id FROM user_packages WHERE user_id=?",
               [userId]
             );
-            const finalId = packageId || row[0]?.selected_package_id;
+            const finalId = Number(packageId || row[0]?.selected_package_id);
 
-            // 2. user_packages tablosunu güncelle
+            // 2. Paket Limitini Belirle (Senin planlarına göre)
+            // Plan 1: Free (Limit 1)
+            // Plan 2, 3, 4: Starter, Pro, Premium (Sınırsız yani -1)
+            let dailyLimit = 1; 
+            if (finalId >= 2) {
+              dailyLimit = -1; // Unlimited summaries
+            }
+
+            // 3. user_packages tablosunu güncelle (Limit ve Kullanım dahil)
             await db.execute(
               `UPDATE user_packages 
-               SET packageId=?, package_status_id=2, Start_Date=?, End_Date=? 
+               SET packageId=?, 
+                   package_status_id=2, 
+                   Start_Date=?, 
+                   End_Date=?, 
+                   daily_limit=?, 
+                   daily_used=0 
                WHERE user_id=?`,
-              [finalId, startDate, endDate, userId]
+              [finalId, startDate, endDate, dailyLimit, userId]
             );
 
-            // 3. YENİ MANTIĞA GÖRE BİLDİRİM BİLGİLERİNİ notifications TABLOSUNA YAZ
-            const { deliveryChannel, deliveryId } = req.body;
-
+            // 4. BİLDİRİM BİLGİLERİNİ notifications TABLOSUNA YAZ
             if (deliveryChannel && deliveryId) {
               let emailVal = deliveryChannel === "Email" ? deliveryId : null;
               let tgIdVal = deliveryChannel === "Telegram" ? deliveryId : null;
 
               try {
-                // NOTIFICATIONS tablosuna user_id UNIQUE olduğu için ON DUPLICATE KEY kullandık
                 await db.execute(
                   `INSERT INTO notifications (user_id, notification_email, telegram_chat_id) 
                    VALUES (?, ?, ?)
@@ -79,14 +89,13 @@ export default async function handler(req, res) {
                    telegram_chat_id = COALESCE(?, telegram_chat_id)`,
                   [userId, emailVal, tgIdVal, emailVal, tgIdVal]
                 );
-                
-                console.log(`Bildirim ayarları notifications tablosuna kaydedildi: User ${userId}`);
+                console.log(`Bildirim ayarları kaydedildi: User ${userId}`);
               } catch (err) {
                 console.error("Notifications kayıt hatası:", err);
               }
             }
 
-            return res.json({ message: "Ödeme başarılı ✅", status: 2 });
+            return res.json({ message: "Ödeme başarılı ✅", status: 2, dailyLimit });
 
           case "pay-failed":
             await db.execute(

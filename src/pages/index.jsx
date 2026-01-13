@@ -171,7 +171,7 @@ const Home = () => {
     if (response.status === 403) {
       // Backend'den gelen "Upgrade to Pro/Premium..." mesajını setError'a basabilir 
       // veya doğrudan modalı açabilirsiniz.
-      setError("Transcript is not available. " + errorData.error); 
+      setError("Transcript is not available "); 
      // setShowModal(true); // Paket yükseltme modalını tetikler
       return; 
     }

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Check, Zap, Star, Shield, Crown } from "lucide-react";
+import { Check, Zap, Star, Shield, Crown, Lock } from "lucide-react";
 import Navbar from "../components/Navbar";
 import { useRouter } from "next/router";
 
@@ -16,14 +16,18 @@ const plans = [
     color: "slate-400",
     icon: <Shield className="text-slate-400" />,
     buttonText: "Current Plan",
-    current: true
   },
   {
     id: 2,
     name: "Starter",
     price: "$9",
     period: "/month",
-    features: ["Unlimited summaries", "1 channel tracking", "Email notifications", "Standard support"],
+    features: [
+      "30 video summaries",
+      "1 channel tracking",
+      "Basic AI summaries",
+      "Email support",
+    ],
     color: "purple-400",
     icon: <Zap className="text-purple-400" />,
     buttonText: "Upgrade",
@@ -33,7 +37,13 @@ const plans = [
     name: "Pro",
     price: "$19",
     period: "/month",
-    features: ["Unlimited summaries", "5 channel tracking", "Email + Telegram alerts", "Priority support"],
+    features: [
+      "Unlimited summaries",
+      "5 channel tracking",
+      "Real-time notifications",
+      "Detailed analytics",
+      "Priority support",
+    ],
     color: "cyan-400",
     icon: <Star className="text-cyan-400" />,
     buttonText: "Upgrade to Pro",
@@ -44,7 +54,13 @@ const plans = [
     name: "Premium",
     price: "$39",
     period: "/month",
-    features: ["Unlimited summaries", "Unlimited channels", "All alert channels", "24/7 VIP support"],
+    features: [
+      "Everything in Pro +",
+      "Telegram & Email delivery",
+      "Custom reports",
+      "API access",
+      "24/7 priority support",
+    ],
     color: "amber-400",
     icon: <Crown className="text-amber-400" />,
     buttonText: "Go Ultimate",
@@ -54,28 +70,33 @@ const plans = [
 const Pricing = () => {
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userPkg, setUserPkg] = useState(null);
 
-  // Giriş durumunu kontrol et
   useEffect(() => {
-    const authToken = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
-    setIsAuthenticated(!!authToken);
+    const token = localStorage.getItem("auth_token");
+    if (token) {
+      setIsAuthenticated(true);
+      fetch("/api/user/package", {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(data => setUserPkg(data))
+        .catch(err => console.error("Paket yüklenemedi", err));
+    }
   }, []);
 
-  // Paket Seçme Mantığı (Ana sayfadaki ile aynı)
   const handleSelectPackage = (plan) => {
-    if (plan.name === "Free") return; // Free plan için bir şey yapma (zaten default)
+    // Sadece mevcut paketi ise tıklamayı engelle (Modal ile aynı mantık)
+    if (userPkg?.packageId === plan.id) return;
+    if (plan.id === 1) return; // Free plan seçilemez
 
     if (typeof window !== "undefined") {
-      // Seçilen paketi sakla
       localStorage.setItem("selectedPackage", plan.name);
-
       const authToken = localStorage.getItem("auth_token");
 
       if (authToken) {
-        // Giriş yapmışsa satın alma sayfasına
         router.push("/CheckPackage");
       } else {
-        // Giriş yapmamışsa signin'e ve sonrasında geri dönmek üzere callbackUrl ekle
         router.push("/signin?callbackUrl=/CheckPackage");
       }
     }
@@ -95,59 +116,70 @@ const Pricing = () => {
             Upgrade Your Experience
           </motion.h1>
           <p className="text-gray-400 text-xl max-w-2xl mx-auto">
-            Choose the perfect plan to stay ahead with real-time YouTube insights and automated summaries.
+            {userPkg && userPkg.packageId > 1 
+              ? `You are currently on the ${userPkg.packageName} plan.` 
+              : "Choose the perfect plan to stay ahead with real-time YouTube insights."}
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {plans.map((plan, index) => (
-            <motion.div
-              key={plan.id}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className={`relative group bg-white/5 backdrop-blur-xl border ${
-                plan.popular ? "border-cyan-500/50 shadow-[0_0_40px_rgba(6,182,212,0.2)]" : "border-white/10"
-              } p-8 rounded-[2.5rem] flex flex-col hover:bg-white/10 transition-all duration-500`}
-            >
-              {plan.popular && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-cyan-500 text-black text-xs font-bold px-4 py-1 rounded-full uppercase tracking-widest">
-                  Best Value
-                </div>
-              )}
+          {plans.map((plan, index) => {
+            // Kullanıcının mevcut paketi olup olmadığını kontrol et
+            const isMyPlan = userPkg?.packageId === plan.id || (!userPkg && plan.id === 1);
 
-              <div className="mb-8">
-                <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  {plan.icon}
-                </div>
-                <h3 className="text-2xl font-black mb-2">{plan.name}</h3>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-black">{plan.price}</span>
-                  <span className="text-gray-500 text-sm">{plan.period}</span>
-                </div>
-              </div>
-
-              <div className="space-y-4 mb-10 flex-1">
-                {plan.features.map((feature, fIndex) => (
-                  <div key={fIndex} className="flex items-center gap-3 text-sm text-gray-300">
-                    <Check size={16} className={`text-${plan.color}`} />
-                    {feature}
-                  </div>
-                ))}
-              </div>
-
-              <button
-                onClick={() => handleSelectPackage(plan)}
-                className={`w-full py-4 rounded-2xl font-bold transition-all duration-300 ${
-                  plan.popular 
-                  ? "bg-cyan-500 text-black hover:bg-cyan-400" 
-                  : "bg-white/10 text-white hover:bg-white/20 border border-white/10"
-                } ${plan.current ? "opacity-50 cursor-default" : "hover:scale-[1.02] active:scale-95"}`}
+            return (
+              <motion.div
+                key={plan.id}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className={`relative group bg-white/5 backdrop-blur-xl border ${
+                  isMyPlan ? "border-green-500 shadow-lg" :
+                  plan.popular ? "border-cyan-500/50 shadow-cyan-500/20" : "border-white/10"
+                } p-8 rounded-[2.5rem] flex flex-col transition-all duration-500`}
               >
-                {plan.buttonText}
-              </button>
-            </motion.div>
-          ))}
+                {isMyPlan && (
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-green-500 text-black text-xs font-bold px-4 py-1 rounded-full uppercase">
+                    Your Plan
+                  </div>
+                )}
+
+                <div className="mb-8">
+                  <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center mb-4">
+                    {plan.icon}
+                  </div>
+                  <h3 className="text-2xl font-black mb-2">{plan.name}</h3>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-4xl font-black">{plan.price}</span>
+                    <span className="text-gray-500 text-sm">{plan.period}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-4 mb-10 flex-1">
+                  {plan.features.map((feature, fIndex) => (
+                    <div key={fIndex} className="flex items-center gap-3 text-sm text-gray-300">
+                      <Check size={16} className={`text-cyan-400`} />
+                      {feature}
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => handleSelectPackage(plan)}
+                  disabled={isMyPlan}
+                  className={`w-full py-4 rounded-2xl font-bold transition-all duration-300 ${
+                    isMyPlan 
+                      ? "bg-green-500 text-black cursor-default" 
+                      : plan.popular 
+                        ? "bg-cyan-500 text-black hover:bg-cyan-400" 
+                        : "bg-white/10 hover:bg-white/20"
+                  }`}
+                >
+                  {isMyPlan ? "Active Plan" : plan.buttonText}
+                </button>
+              </motion.div>
+            );
+          })}
         </div>
       </main>
     </div>

@@ -2,6 +2,7 @@ import db from "../../../../lib/Db";
 import { authenticate } from "../../../../lib/authMiddleware";
 
 export default async function handler(req, res) {
+  
   const isAuthenticated = authenticate(req, res);
   if (!isAuthenticated) return;
   
