@@ -214,7 +214,6 @@ const Profile = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white font-sans pb-20">
       <Navbar isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} />
-      
       <AnimatePresence>{notification.message && <NotificationPopup message={notification.message} type={notification.type} onClose={() => setNotification({ message: "", type: "" })} />}</AnimatePresence>
       <LimitModal isOpen={showLimitModal} onClose={() => setShowLimitModal(false)} plan={userData?.package} limit={userData?.package === "Pro" ? 5 : 1} />
       <SummaryModal isOpen={!!selectedSummary} onClose={() => setSelectedSummary(null)} summary={selectedSummary} />
