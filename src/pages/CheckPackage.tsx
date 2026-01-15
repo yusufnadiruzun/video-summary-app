@@ -123,15 +123,17 @@ const CheckPackage: React.FC = () => {
 
   const handleProceedToPayment = () => {
     if (!paddle || !pkg || alreadyHasPlan) return;
-
+    const BaseURL = process.env.NEXT_PUBLIC_API_URL;
+    console.log("BaseURL:", BaseURL);
     const deliveryParam = `&deliveryChannel=${deliveryChannel}&deliveryId=${channelDetail}`;
-    
+    // https://main.d2b1zmqcf4cyqd.amplifyapp.com/success?plan=Premium&packageId=4&deliveryChannel=Email&deliveryId=
     paddle.Checkout.open({
       items: [{ priceId: pkg.paddlePriceId, quantity: 1 }],
       settings: {
         displayMode: "overlay",
         theme: "dark",
-        successUrl: `${window.location.origin}/success?plan=${pkg.name}&packageId=${pkg.id}${deliveryParam}`,
+    
+        successUrl: `${BaseURL}/success?plan=${pkg.name}&packageId=${pkg.id}${deliveryParam}`,
       },
     });
   };
