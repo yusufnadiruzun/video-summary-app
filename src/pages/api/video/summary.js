@@ -1,7 +1,7 @@
 // pages/api/summarize.js (veya ilgili API yolun)
 import db from "../../../../lib/Db"; 
 import { authenticate } from "../../../../lib/authMiddleware"; 
-import { getTranscriptSafe } from "../../../../lib/services/getTranscript"; 
+import { getTranscriptSafe } from "../../../../lib/services/getTranscriptWithAndroid"; 
 import { summarizeTranscript } from "../../../../lib/services/summarizeTranscript"; 
 
 export default async function handler(req, res) {
