@@ -1,7 +1,7 @@
 // pages/api/summarize.js (veya ilgili API yolun)
 import db from "../../../../lib/Db"; 
 import { authenticate } from "../../../../lib/authMiddleware"; 
-import { getTranscriptSafe } from "../../../../lib/services/getTranscriptWithAndroid"; 
+import { getTranscript } from "../../../../lib/services/getTranscript"; 
 import { summarizeTranscript } from "../../../../lib/services/summarizeTranscript"; 
 
 export default async function handler(req, res) {
@@ -54,7 +54,7 @@ export default async function handler(req, res) {
     }
 
     // 5. Transkript Al (Paket yetkisine göre kontrol edilir)
-    let transcript = await getTranscriptSafe(videoId, pkgId);
+    let transcript = await getTranscript(videoId, pkgId);
     if (transcript === 'TRANSCRIPT_NOT_AVAILABLE') {
       return res.status(403).json({ 
         error: "Advanced transcription required.",
