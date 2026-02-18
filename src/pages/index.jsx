@@ -117,84 +117,102 @@ const Home = () => {
     }
   };
 
-  const handleGetSummary = useCallback(
-    async (override) => {
-      if (!isAuthenticated && !override) {
-        return setShowModal(true);
-      }
-
-      setError("");
-      setSummary("");
-
-      const id = extractYouTubeId(videoId);
-      if (!videoId.trim()) return setError("Please enter a YouTube link.");
-      if (!id) return setError("Invalid YouTube link or ID.");
-
-      setLoading(true);
-
-      const apiRoute = "/api/video/summary";
-      const guest_token =
-        typeof window !== "undefined"
-          ? localStorage.getItem("guest_token")
-          : null;
-      // Auth token'ı kontrol et (eğer varsa, guest_token yerine onu kullanmak isteyebilirsiniz)
-      const auth_token =
-        typeof window !== "undefined"
-          ? localStorage.getItem("auth_token")
-          : null;
-      const tokenToUse = auth_token || guest_token;
-
-      try {
-  setLoading(true); // Yükleniyor durumunu başlatmayı unutmayın
-  setError("");     // Eski hataları temizleyin
-
-  const response = await fetch(apiRoute, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(tokenToUse ? { Authorization: `Bearer ${tokenToUse}` } : {}),
-    },
-    body: JSON.stringify({
-      videoId: id,
-      summaryType: "short",
-      keywords: keywords.trim(),
-    }),
-  });
-
-  // Backend'den gelen hata durumlarını kontrol et
-  if (!response.ok) {
-    const errorData = await response
-      .json()
-      .catch(() => ({ error: "Bilinmeyen bir hata oluştu." }));
-
-    // --- TRANSKRİPT YOK VEYA PAKET YETERSİZ (403 DURUMU) ---
-    if (response.status === 403) {
-      // Backend'den gelen "Upgrade to Pro/Premium..." mesajını setError'a basabilir 
-      // veya doğrudan modalı açabilirsiniz.
-      setError("Transcript is not available "); 
-     // setShowModal(true); // Paket yükseltme modalını tetikler
-      return; 
+ const handleGetSummary = useCallback(
+  async (override) => {
+    if (!isAuthenticated && !override) {
+      return setShowModal(true);
     }
 
-    // Diğer hata durumları (500, 401, 405 vs.)
-    throw new Error(errorData.error || `Hata: ${response.status}`);
-  }
+    const id = extractYouTubeId(videoId);
+    if (!videoId.trim()) return setError("Please enter a YouTube link.");
+    if (!id) return setError("Invalid YouTube link or ID.");
 
-  // Başarılı durum
-  const data = await response.json();
-  setSummary(data.summary || JSON.stringify(data, null, 2));
+    setLoading(true);
+    setError("");
+    setSummary("");
 
-} catch (error) {
-  console.error("API çağrısında hata:", error.message);
-  setError(error.message);
-  setSummary("");
-} finally {
-  setLoading(false);
-}
-    },
-    [videoId, isAuthenticated, keywords]
-  );
+    try {
+      // --- FRONTEND TRANSCRIPT (KÜTÜPHANE MANTIĞIYLA) ---
+      let transcriptText = "";
+      console.log("🔍 Browser fetching transcript like YouTube Plus API...");
 
+      try {
+        // YouTube sayfasını fetch ediyoruz (Kullanıcı IP'siyle)
+        const watchRes = await fetch(`https://www.youtube.com/watch?v=${id}`, {
+          headers: { 
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Accept-Language': 'tr-TR,tr;q=0.9'
+          }
+        });
+        const html = await watchRes.text();
+
+        // Kütüphanenin yaptığı gibi Player Response içinden caption'ları ayıklıyoruz
+        const regex = /"captionTracks":\s*(\[.+?\])/;
+        const match = html.match(regex);
+
+        if (match) {
+          const captions = JSON.parse(match[1]);
+          // Türkçe varsa al, yoksa ilk dili al
+          const track = captions.find(c => c.languageCode === 'tr') || captions[0];
+
+          if (track && track.baseUrl) {
+            // Transcript verisini çekiyoruz
+            const transcriptRes = await fetch(track.baseUrl + "&fmt=json3");
+            const data = await transcriptRes.json();
+            
+            // Kütüphanenin döndüğü dizi (array) formatını metne çeviriyoruz
+            transcriptText = data.events
+              .filter(e => e.segs)
+              .map(e => e.segs.map(s => s.utf8).join(''))
+              .join(' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+          }
+        }
+      } catch (browserErr) {
+        console.warn("Browser block or CORS issue, let backend handle it:", browserErr);
+      }
+
+      // --- BACKEND İSTEĞİ ---
+      const guest_token = localStorage.getItem("guest_token");
+      const auth_token = localStorage.getItem("auth_token");
+      const tokenToUse = auth_token || guest_token;
+
+      const response = await fetch("/api/video/summary", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(tokenToUse ? { Authorization: `Bearer ${tokenToUse}` } : {}),
+        },
+        body: JSON.stringify({
+          videoId: id,
+          transcript: transcriptText, // Frontend'den gelen metin
+          summaryType: "short",
+          keywords: keywords.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          setError("Transcript not available. Upgrade required.");
+          return;
+        }
+        throw new Error(data.error || "Summary failed.");
+      }
+
+      setSummary(data.summary);
+
+    } catch (error) {
+      console.error("API Error:", error.message);
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  },
+  [videoId, isAuthenticated, keywords]
+);
  
   // --- GÜNCELLENMİŞ PAKET SEÇME FONKSİYONU ---
   const handleSelectPackage = (pkgName) => {
