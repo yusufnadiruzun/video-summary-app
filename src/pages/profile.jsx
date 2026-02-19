@@ -78,7 +78,7 @@ const LimitModal = ({ isOpen, onClose, plan, limit }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-slate-900 border border-white/10 rounded-[2.5rem] p-8 max-w-md w-full text-center shadow-2xl">
+      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-slate-900 border border-white/10 rounded-[2.5rem] p-8 max-md w-full text-center shadow-2xl">
         <Zap className="w-16 h-16 text-amber-500 mx-auto mb-6" />
         <h3 className="text-3xl font-black mb-3 text-white">Limit Reached!</h3>
         <p className="text-gray-400 mb-8">With the {plan} plan, you can follow up to {limit} channels.</p>
@@ -89,7 +89,7 @@ const LimitModal = ({ isOpen, onClose, plan, limit }) => {
   );
 };
 
-// --- 4. SUMMARY MODAL (WITH DOWNLOAD & SHARE) ---
+// --- 4. SUMMARY MODAL ---
 const SummaryModal = ({ isOpen, onClose, summary }) => {
   if (!isOpen || !summary) return null;
 
@@ -147,6 +147,10 @@ const Profile = () => {
   const [tempNotif, setTempNotif] = useState({ email: "", telegram: "" });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
+  // Düzenleme modları
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [isEditingTelegram, setIsEditingTelegram] = useState(false);
+
   const [notification, setNotification] = useState({ message: "", type: "" });
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [selectedSummary, setSelectedSummary] = useState(null);
@@ -170,9 +174,44 @@ const Profile = () => {
       const json = await res.json();
       if (json.success) {
         setUserData(json.data);
-        setTempNotif({ email: json.data.notifications.email || "", telegram: json.data.notifications.telegram || "" });
+        setTempNotif({ 
+          email: json.data.notifications?.email || json.data.email || "", 
+          telegram: json.data.notifications?.telegram || "" 
+        });
       }
     } catch (err) { console.error(err); } finally { setLoading(false); }
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setTempNotif(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSaveSettings = async () => {
+    try {
+      const res = await fetch("/api/user/update-notifications", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json", 
+          authorization: `Bearer ${localStorage.getItem("auth_token")}` 
+        },
+        body: JSON.stringify({ 
+          email: tempNotif.email,
+          telegram: tempNotif.telegram 
+        }),
+      });
+      if (res.ok) {
+        setNotification({ message: "Settings updated successfully!", type: "success" });
+        setIsEditingEmail(false);
+        setIsEditingTelegram(false);
+        fetchProfile();
+      } else {
+        const data = await res.json();
+        setNotification({ message: data.msg || "Update failed.", type: "error" });
+      }
+    } catch (err) {
+      setNotification({ message: "Connection error.", type: "error" });
+    }
   };
 
   const handleAddChannel = async () => {
@@ -210,6 +249,7 @@ const Profile = () => {
   if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white italic">Loading Profile...</div>;
 
   const hasTelegramAccess = userData?.package === "Pro" || userData?.package === "Premium";
+  const isAnyFieldEditing = isEditingEmail || isEditingTelegram;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white font-sans pb-20">
@@ -237,17 +277,69 @@ const Profile = () => {
           <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-8 rounded-[2.5rem]">
             <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-green-400"><CheckCircle size={20} /> Settings</h3>
             <div className="space-y-4">
+              
+              {/* Email Section */}
               <div>
-                <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Email</label>
-                <div className="bg-black/30 border border-white/10 rounded-xl px-4 py-2 text-sm text-gray-500 truncate">{tempNotif.email}</div>
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Telegram</label>
-                <div className="relative">
-                  <input disabled={!hasTelegramAccess} value={tempNotif.telegram} placeholder={hasTelegramAccess ? "@username" : "Upgrade to Pro"} className={`w-full bg-black/30 border border-white/10 rounded-xl px-4 py-2 text-sm ${!hasTelegramAccess && "opacity-40 cursor-not-allowed"}`} />
-                  {!hasTelegramAccess && <div className="absolute right-3 top-2.5 flex items-center gap-1 text-amber-500"><Lock size={14} /><span className="text-[10px] font-bold uppercase">Locked</span></div>}
+                <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Notification Email</label>
+                <div className="relative group">
+                  <input 
+                    type="email"
+                    name="email"
+                    disabled={!isEditingEmail}
+                    value={tempNotif.email} 
+                    onChange={handleInputChange}
+                    className={`w-full bg-black/30 border border-white/10 rounded-xl px-4 py-2 pr-10 text-sm outline-none transition ${isEditingEmail ? "border-cyan-500/50 bg-black/50" : "opacity-70 cursor-not-allowed"}`} 
+                  />
+                  <button 
+                    onClick={() => setIsEditingEmail(!isEditingEmail)}
+                    className={`absolute right-3 top-2.5 transition-colors ${isEditingEmail ? "text-cyan-400" : "text-gray-500 hover:text-white"}`}
+                  >
+                    <Edit2 size={16} />
+                  </button>
                 </div>
               </div>
+
+              {/* Telegram Section */}
+              <div>
+                <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Telegram Username</label>
+                <div className="relative group">
+                  <input 
+                    name="telegram"
+                    disabled={!isEditingTelegram || !hasTelegramAccess} 
+                    value={tempNotif.telegram} 
+                    onChange={handleInputChange}
+                    placeholder={hasTelegramAccess ? "@username" : "Upgrade to Pro"} 
+                    className={`w-full bg-black/30 border border-white/10 rounded-xl px-4 py-2 pr-10 text-sm outline-none transition ${isEditingTelegram && hasTelegramAccess ? "border-cyan-500/50 bg-black/50" : "opacity-70 cursor-not-allowed"}`} 
+                  />
+                  {hasTelegramAccess ? (
+                    <button 
+                      onClick={() => setIsEditingTelegram(!isEditingTelegram)}
+                      className={`absolute right-3 top-2.5 transition-colors ${isEditingTelegram ? "text-cyan-400" : "text-gray-500 hover:text-white"}`}
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                  ) : (
+                    <div className="absolute right-3 top-2.5 text-amber-500">
+                      <Lock size={16} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Save Button - Sadece bir şey düzenleniyorsa çıkar */}
+              <AnimatePresence>
+                {isAnyFieldEditing && (
+                  <motion.button 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    onClick={handleSaveSettings}
+                    className="w-full flex items-center justify-center gap-2 bg-cyan-500 text-white hover:bg-cyan-400 rounded-xl py-3 text-sm font-bold transition shadow-[0_0_20px_rgba(6,182,212,0.3)] mt-2"
+                  >
+                    <Save size={16} /> Save Changes
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </div>
