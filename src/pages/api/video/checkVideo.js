@@ -1,158 +1,107 @@
-// src/pages/api/checkVideo.js (CRON Job tarafından çağrılan ana API rotası)
+import db from "../../../../lib/Db";
+import { getRecentVideos } from "../../../../lib/services/youtubeService";
+import { getTranscript } from "../../../../lib/services/getTranscript";
+import { summarizeTranscript } from "../../../../lib/services/summarizeTranscript";
+import { sendMessage } from "../../../../lib/services/SendMessage";
 
-import db from "../../../../lib/Db"; // Veritabanı bağlantısı
-import { getRecentVideos } from "../../../../lib/services/youtubeService"; // YouTube Servisi (Önceki adımda tanımlandı)
-import { getTranscript } from "../../../../lib/services/getTranscript"; // Transkript Servisi (Mevcut olmalı)
-import { summarizeTranscript } from "../../../../lib/services/summarizeTranscript"; // Özet Servisi (Mevcut olmalı)
-import { sendMessage } from "../../../../lib/services/SendMessage"; // Telegram Servisi (Güncellendi)
-// Çevresel Değişkenler
 const CRON_SECRET = process.env.CRON_SECRET;
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-
-if (!YOUTUBE_API_KEY) {
-  console.error("YOUTUBE_API_KEY çevresel değişkeni eksik!");
-}
-
-//---------------------------------------------------------------------------------
-// 📌 ANA HANDLER
-//---------------------------------------------------------------------------------
 
 export default async function handler(req, res) {
-  // ... (Metot ve Güvenlik Kontrolleri aynı) ...
+  // 1. Güvenlik ve Metot Kontrolleri
   if (req.method !== "GET") {
     res.setHeader("Allow", ["GET"]);
     return res.status(405).end(`Method ${req.method} Not Allowed`);
   }
 
   if (req.query.secret !== CRON_SECRET) {
-    return res
-      .status(401)
-      .json({ error: "Yetkisiz erişim. Geçerli secret key gerekiyor." });
+    return res.status(401).json({ error: "Yetkisiz erişim." });
   }
 
-  console.log("-> Yeni Video Çoklu Kontrol Görevi Başladı.");
+  console.log("-> Video Kontrol Görevi Başladı.");
 
   try {
-    // 2. Tablo yapılarınıza %100 uyumlu NİHAİ SQL Sorgusu
+    // 2. Abonelikleri ve Aktif Paket Bilgilerini Çek
     const [subscriptions] = await db.execute(`
-    SELECT 
-    s.id as subscription_id, 
-    s.user_id, 
-    s.channel_id, 
-    s.last_video_id, 
-    n.notification_email, 
-    n.telegram_chat_id, 
-    n.whatsapp_phone,
-    up.packageId -- Alt sorgu yerine join ile paket bilgisini alıyoruz
-FROM subscriptions s
-LEFT JOIN notifications n ON s.user_id = n.user_id
-LEFT JOIN user_packages up ON s.user_id = up.user_id AND up.package_status_id = 2 -- Aktif paketleri çek (Tablona göre 2 aktif görünüyor)
-WHERE s.channel_id != 'default_channel'
-`);
+      SELECT 
+        s.id as subscription_id, 
+        s.user_id, 
+        s.channel_id, 
+        s.last_video_id, 
+        n.telegram_chat_id, 
+        up.packageId 
+      FROM subscriptions s
+      LEFT JOIN notifications n ON s.user_id = n.user_id
+      LEFT JOIN user_packages up ON s.user_id = up.user_id AND up.package_status_id = 2
+      WHERE s.channel_id != 'default_channel'
+    `);
 
     if (subscriptions.length === 0) {
-      console.log("Kontrol edilecek aktif abonelik bulunamadı.");
-      return res
-        .status(200)
-        .json({ message: "Kontrol edilecek aktif abonelik bulunamadı." });
+      return res.status(200).json({ message: "Kontrol edilecek aktif abonelik yok." });
     }
 
-    const updatePromises = [];
-    console.log(`Toplam ${subscriptions} abonelik kontrol edilecek.`);
-    console.log(`Toplam ${subscriptions.length} abonelik kontrol edilecek.`);
-    // 3. Her bir abonelik kaydını kontrol et
+    console.log(`Toplam ${subscriptions.length} abonelik taranıyor...`);
+    let updatedCount = 0;
+
+    // 3. Her bir abonelik için döngü
     for (const sub of subscriptions) {
-      console.log(
-        `[USER ${sub.user_id}] Abonelik kontrolü başlatıldı. Kanal ID: ${sub.channel_id}`,
-      );
-      const latestVideo = await getRecentVideos(sub.channel_id, 1);
-      console.log(latestVideo);
-      console.log(
-        `[USER ${sub.user_id}] Kanal ID: ${sub.channel_id} için en son video kontrol ediliyor...`,
-        latestVideo,
-      );
-      // Yeni video var mı ve daha önce bildirilmemiş mi kontrol et
-      if (latestVideo[0].id !== sub.last_video_id) {
-        console.log(
-          `[USER ${sub.user_id}] Yeni Video Bulundu: ${latestVideo[0].title} - ${latestVideo[0].id}`,
-        );
+      try {
+        // Yeni servisi çağır (Dizi döner)
+        const latestVideos = await getRecentVideos(sub.channel_id, 1);
 
-        // --- 4. VİDEO İŞLEME VE ÖZETLEME ---
-        const packageType = sub.packageId; // Varsayılan paket 'guest'
-        console.log("sub :::", sub);
-        const transcriptText = await getTranscript(
-          latestVideo[0].id,
-          packageType,
-        );
-        const summary = await summarizeTranscript(transcriptText);
-
-        // --- 5. KOŞULLU BİLDİRİM GÖNDERME ---
-        const sendPromises = [];
-
-        // A) TELEGRAM BİLDİRİMİ (telegram_chat_id değeri varsa)
-        if (sub.telegram_chat_id) {
-          console.log(
-            `[USER ${sub.user_id}] Telegram bildirimi gönderiliyor... Chat ID: ${sub.telegram_chat_id}`,
-          );
-          sendPromises.push(
-            sendMessage(
-            
-              latestVideo[0],
-              latestVideo[0].id,
-              summary,
-              sub.telegram_chat_id,
-            ),
-          );
+        // Video bulunamadıysa veya hata döndüyse (boş dizi) bu kullanıcıyı atla
+        if (!latestVideos || latestVideos.length === 0) {
+          console.log(`[USER ${sub.user_id}] Video bulunamadı veya kota dolu: ${sub.channel_id}`);
+          continue;
         }
 
-        // // B) E-POSTA BİLDİRİMİ (notification_email değeri varsa)
-        // if (sub.notification_email) {
-        //   sendPromises.push(
-        //     sendEmail(
-        //       latestVideo,
-        //       latestVideo.id,
-        //       summary,
-        //       sub.notification_email
-        //     )
-        //   );
-        // }
+        const latestVideo = latestVideos[0];
 
-        // C) WHATSAPP BİLDİRİMİ (whatsapp_phone değeri varsa)
-        if (sub.whatsapp_phone) {
-          sendPromises.push(
-            sendWhatsapp(
-             
-              latestVideo[0],
-              latestVideo[0].id,
+        // 4. Yeni Video Kontrolü
+        if (latestVideo.id !== sub.last_video_id) {
+          console.log(`[YENİ VİDEO TESPİTİ] User: ${sub.user_id} - Video: ${latestVideo.title}`);
+
+          // Transkript ve Özetleme İşlemi
+          const packageType = sub.packageId || 'guest';
+          const transcriptText = await getTranscript(latestVideo.id, packageType);
+          
+          if (!transcriptText) {
+            console.warn(`[USER ${sub.user_id}] Transkript alınamadı, bildirim iptal.`);
+            continue;
+          }
+
+          const summary = await summarizeTranscript(transcriptText);
+
+          // 5. Bildirim Gönderme (Telegram)
+          if (sub.telegram_chat_id) {
+            await sendMessage(
+              latestVideo,
+              latestVideo.id,
               summary,
-              sub.whatsapp_phone,
-            ),
-          );
-        }
+              sub.telegram_chat_id
+            );
+          }
 
-        await Promise.all(sendPromises);
-
-        // D) Veritabanını Güncelle
-        updatePromises.push(
-          db.execute(
+          // 6. Veritabanını Güncelle (Anlık güncelleme en güvenlisidir)
+          await db.execute(
             `UPDATE subscriptions SET last_video_id = ? WHERE id = ?`,
-            [latestVideo[0].id, sub.subscription_id],
-          ),
-        );
+            [latestVideo.id, sub.subscription_id]
+          );
+          
+          updatedCount++;
+        }
+      } catch (loopError) {
+        // Döngü içi hata: Bir kullanıcıdaki hata diğerlerini durdurmaz
+        console.error(`[USER ${sub.user_id}] İşlem sırasında hata:`, loopError.message);
       }
     }
 
-    // 6. Tüm veritabanı güncellemelerini toplu olarak bekle
-    await Promise.all(updatePromises);
-
     return res.status(200).json({
-      message: `Çok Kanallı Video kontrol görevi tamamlandı. ${updatePromises.length} adet abonelik güncellendi.`,
-      updatedCount: updatePromises.length,
+      message: "Kontrol tamamlandı.",
+      updatedCount: updatedCount
     });
+
   } catch (error) {
-    console.error("Kritik Video Kontrol Hatası:", error);
-    return res
-      .status(500)
-      .json({ error: "Sunucu hatası. Görev tamamlanamadı." });
+    console.error("Kritik Sistem Hatası:", error);
+    return res.status(500).json({ error: "Sunucu hatası oluştu." });
   }
 }
