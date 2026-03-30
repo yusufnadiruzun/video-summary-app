@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import db from "../../../lib/Db";
+import db from "../../../../lib/Db";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();

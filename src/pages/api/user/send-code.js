@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     );
 
     await resend.emails.send({
-      from: 'SummarizeAI <noreply@resend.dev>', // Kendi domainini bağlayınca burayı güncelle
+      from: 'SummarizeAI <noreply@kdemir.com>', // Kendi domainini bağlayınca burayı güncelle
       to: email,
       subject: 'Your Verification Code',
       html: `
