@@ -159,16 +159,41 @@ const Profile = () => {
   };
 
   const handleAddChannel = async () => {
-    if (!channelId.trim()) return;
-    try {
-      const res = await fetch("/api/user/channels", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", authorization: `Bearer ${localStorage.getItem("auth_token")}` },
-        body: JSON.stringify({ channelId: channelId.trim() }),
+  if (!channelId.trim()) return;
+  
+  try {
+    const res = await fetch("/api/user/channels", {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json", 
+        authorization: `Bearer ${localStorage.getItem("auth_token")}` 
+      },
+      body: JSON.stringify({ channelId: channelId.trim() }),
+    });
+
+    if (res.status === 200) {
+      setNotification({ message: "Channel added!", type: "success" });
+      setChannelId("");
+      fetchProfile();
+    } else if (res.status === 403) {
+      // Limit aşımı uyarısı
+      setNotification({ 
+        message: "Your channel adding limit has been reached!", 
+        type: "error" 
       });
-      if (res.status === 200) { setNotification({ message: "Channel added!", type: "success" }); setChannelId(""); fetchProfile(); }
-    } catch (err) { console.error(err); }
-  };
+    } else {
+      // Diğer olası hatalar için genel bir uyarı
+      const data = await res.json();
+      setNotification({ 
+        message: data.error || "An error occurred while adding the channel.", 
+        type: "error" 
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    setNotification({ message: "Connection error!", type: "error" });
+  }
+};
 
   // --- YENİ: KANAL SİLME FONKSİYONU ---
   const handleDeleteChannel = async () => {
