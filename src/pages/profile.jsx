@@ -48,6 +48,7 @@ const NotificationPopup = ({ message, type, onClose }) => {
 
 // --- 2. EMAIL VERIFICATION MODAL ---
 const EmailVerifyModal = ({ isOpen, onClose, onVerify, email, loading }) => {
+  console.log("Verification Modal State:", { isOpen, email, loading });
   const [code, setCode] = useState("");
   if (!isOpen) return null;
 
