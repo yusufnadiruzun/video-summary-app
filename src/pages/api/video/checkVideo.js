@@ -6,7 +6,6 @@ import { sendMessage } from "../../../../lib/services/SendMessage";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
-// Shorts Kontrolü: İçinde Dakika (M) veya Saat (H) yoksa Shorts kabul edilir (<60sn)
 function isShortsVideo(duration) {
   if (!duration) return false;
   return !duration.includes('M') && !duration.includes('H');
@@ -41,7 +40,7 @@ export default async function handler(req, res) {
         // 1. Yeni video mu kontrolü
         if (latestVideo.id !== sub.last_video_id) {
           
-          // 2. Canlı Yayın veya Shorts Filtresi (DB'yi güncelle ve atla)
+          // 2. Canlı Yayın veya Shorts Filtresi
           if (latestVideo.isLive || isShortsVideo(latestVideo.duration)) {
             console.log(`[ATLANDI] Canlı/Shorts: ${latestVideo.title}`);
             await db.execute(`UPDATE subscriptions SET last_video_id = ? WHERE id = ?`, [latestVideo.id, sub.subscription_id]);
@@ -52,7 +51,6 @@ export default async function handler(req, res) {
           const packageType = sub.packageId || 'guest';
           const transcriptText = await getTranscript(latestVideo.id, packageType);
           
-          // Transkript geçerlilik kontrolü
           const isInvalid = !transcriptText || 
                             transcriptText.length < 150 || 
                             transcriptText.toLowerCase().includes("not available") ||
@@ -68,12 +66,36 @@ export default async function handler(req, res) {
           const summary = await summarizeTranscript(transcriptText);
           const isErrorSummary = !summary || summary.includes("Transkripti vermediniz") || summary.length < 20;
 
-          // 5. Telegram Bildirimi
-          if (!isErrorSummary && sub.telegram_chat_id) {
-            await sendMessage(latestVideo, latestVideo.id, summary, sub.telegram_chat_id);
+          if (!isErrorSummary) {
+            // --- EKLEME: Özet Geçmişine Kaydet (Summaries Tablosu) ---
+            await db.execute(
+              `INSERT INTO summaries (user_id, video_id, channel_id, title, language, summary, duration_seconds, used_transcription)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                sub.user_id,
+                latestVideo.id,
+                latestVideo.channelTitle || sub.channel_id,
+                latestVideo.title,
+                'tr', // veya videonun dili
+                summary,
+                0, // video süresi saniye cinsinden elinizde varsa buraya yazabilirsiniz
+                1
+              ]
+            );
+
+            // --- EKLEME: Kullanım Kotasını Güncelle ---
+            await db.execute(
+              `UPDATE user_packages SET daily_used = daily_used + 1, last_reset = CURDATE() WHERE user_id = ?`,
+              [sub.user_id]
+            );
+
+            // 5. Telegram Bildirimi
+            if (sub.telegram_chat_id) {
+              await sendMessage(latestVideo, latestVideo.id, summary, sub.telegram_chat_id);
+            }
           }
 
-          // 6. DB Güncelleme (Her durumda güncelle ki tekrar sormasın)
+          // 6. DB Güncelleme (Abonelik takibi için)
           await db.execute(`UPDATE subscriptions SET last_video_id = ? WHERE id = ?`, [latestVideo.id, sub.subscription_id]);
           updatedCount++;
         }
@@ -82,7 +104,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ message: "Tamamlandı", updatedCount });
+    return res.status(200).json({ message: "Kontrol tamamlandı.", updatedCount });
 
   } catch (error) {
     console.error("Kritik Hata:", error);

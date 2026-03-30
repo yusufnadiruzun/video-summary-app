@@ -21,7 +21,8 @@ import {
   Download,
   Share2,
   Mail,
-  ShieldCheck
+  ShieldCheck,
+  ExternalLink
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -46,7 +47,73 @@ const NotificationPopup = ({ message, type, onClose }) => {
   );
 };
 
-// --- 2. EMAIL VERIFICATION MODAL ---
+// --- 2. SUMMARY DETAIL MODAL (YENİ/GERİ GELDİ) ---
+const SummaryDetailModal = ({ isOpen, onClose, summaryData, onNotify }) => {
+  if (!isOpen || !summaryData) return null;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(summaryData.summary);
+    onNotify({ message: "Summary copied to clipboard!", type: "success" });
+  };
+
+  const handleDownload = () => {
+    const element = document.createElement("a");
+    const file = new Blob([summaryData.summary], { type: 'text/plain' });
+    element.href = URL.createObjectURL(file);
+    element.download = `${summaryData.title.substring(0, 20)}.txt`;
+    document.body.appendChild(element);
+    element.click();
+  };
+
+  const formatText = (text) => {
+    if (!text) return "";
+    return text
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold">$1</strong>')
+      .replace(/\n/g, '<br />');
+  };
+  console.log("SummaryData in Modal:", summaryData);
+  return (
+    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-lg">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+        animate={{ opacity: 1, scale: 1, y: 0 }} 
+        className="relative bg-slate-900 border border-white/10 rounded-[2.5rem] max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-2xl"
+      >
+        {/* Header */}
+        <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
+          <div className="flex items-center gap-3">
+             <div className="p-2 bg-cyan-500/10 rounded-xl"><FileText className="text-cyan-400" size={20} /></div>
+             <h3 className="font-bold text-lg text-white truncate max-w-[300px]">{summaryData.title}</h3>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition text-gray-400"><X size={20} /></button>
+        </div>
+
+        {/* Content */}
+        <div className="p-8 overflow-y-auto custom-scrollbar flex-1 text-left">
+          <div className="mb-6 flex gap-3 flex-wrap">
+            <span className="text-[10px] bg-white/5 px-3 py-1 rounded-full border border-white/10 text-gray-400 font-bold uppercase">{summaryData.date}</span>
+            <Link href={`https://youtube.com/watch?v=${summaryData.videoId}`} target="_blank" className="text-[10px] bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20 text-red-400 font-bold uppercase flex items-center gap-1 hover:bg-red-500/20 transition">
+              <Youtube size={12}/> View Video <ExternalLink size={10}/>
+            </Link>
+          </div>
+          <div 
+            className="text-gray-300 leading-relaxed text-sm prose prose-invert max-w-none"
+            dangerouslySetInnerHTML={{ __html: formatText(summaryData.summary) }}
+          />
+        </div>
+
+        {/* Footer Actions */}
+        <div className="p-6 border-t border-white/10 grid grid-cols-3 gap-3 bg-white/5">
+          <button onClick={handleCopy} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 hover:bg-white/10 transition text-xs font-bold"><Share2 size={16}/> Copy</button>
+          <button onClick={handleDownload} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 hover:bg-white/10 transition text-xs font-bold"><Download size={16}/> Download</button>
+          <button onClick={onClose} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 transition text-xs font-bold text-white">Close</button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// --- EMAIL VERIFICATION MODAL ---
 const EmailVerifyModal = ({ isOpen, onClose, onVerify, email, loading, error, setError }) => {
   const [code, setCode] = useState("");
   useEffect(() => { if (code.length > 0) setError(""); }, [code, setError]);
@@ -68,7 +135,7 @@ const EmailVerifyModal = ({ isOpen, onClose, onVerify, email, loading, error, se
   );
 };
 
-// --- 3. DELETE CONFIRMATION MODAL ---
+// --- DELETE CONFIRMATION MODAL ---
 const DeleteConfirmModal = ({ isOpen, onClose, onConfirm, channelName }) => {
   if (!isOpen) return null;
   return (
@@ -100,13 +167,11 @@ const Profile = () => {
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [modalError, setModalError] = useState("");
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, channelId: null, channelName: "" });
+  
+  // YENİ: Seçilen özet detayını tutan state
+  const [selectedSummary, setSelectedSummary] = useState(null);
 
   useEffect(() => { fetchProfile(); }, []);
-  useEffect(() => {
-    const onFocus = () => fetchProfile();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
 
   const fetchProfile = async () => {
     try {
@@ -159,43 +224,23 @@ const Profile = () => {
   };
 
   const handleAddChannel = async () => {
-  if (!channelId.trim()) return;
-  
-  try {
-    const res = await fetch("/api/user/channels", {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json", 
-        authorization: `Bearer ${localStorage.getItem("auth_token")}` 
-      },
-      body: JSON.stringify({ channelId: channelId.trim() }),
-    });
-
-    if (res.status === 200) {
-      setNotification({ message: "Channel added!", type: "success" });
-      setChannelId("");
-      fetchProfile();
-    } else if (res.status === 403) {
-      // Limit aşımı uyarısı
-      setNotification({ 
-        message: "Your channel adding limit has been reached!", 
-        type: "error" 
+    if (!channelId.trim()) return;
+    try {
+      const res = await fetch("/api/user/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+        body: JSON.stringify({ channelId: channelId.trim() }),
       });
-    } else {
-      // Diğer olası hatalar için genel bir uyarı
-      const data = await res.json();
-      setNotification({ 
-        message: data.error || "An error occurred while adding the channel.", 
-        type: "error" 
-      });
-    }
-  } catch (err) {
-    console.error(err);
-    setNotification({ message: "Connection error!", type: "error" });
-  }
-};
+      if (res.status === 200) {
+        setNotification({ message: "Channel added!", type: "success" });
+        setChannelId("");
+        fetchProfile();
+      } else if (res.status === 403) {
+        setNotification({ message: "Your channel adding limit has been reached!", type: "error" });
+      }
+    } catch (err) { setNotification({ message: "Connection error!", type: "error" }); }
+  };
 
-  // --- YENİ: KANAL SİLME FONKSİYONU ---
   const handleDeleteChannel = async () => {
     try {
       const res = await fetch(`/api/user/channels?id=${deleteModal.channelId}`, {
@@ -220,10 +265,16 @@ const Profile = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white font-sans pb-20 text-left">
       <Navbar isAuthenticated={isAuthenticated} />
-      <AnimatePresence>{notification.message && <NotificationPopup message={notification.message} type={notification.type} onClose={() => setNotification({ message: "", type: "" })} />}</AnimatePresence>
+      
+      {/* --- MODALLAR --- */}
+      <AnimatePresence>
+        {notification.message && (
+          <NotificationPopup message={notification.message} type={notification.type} onClose={() => setNotification({ message: "", type: "" })} />
+        )}
+      </AnimatePresence>
+      
       <EmailVerifyModal isOpen={isVerifyModalOpen} onClose={() => setIsVerifyModalOpen(false)} onVerify={handleVerifyCode} email={tempNotif.email} loading={verifyLoading} error={modalError} setError={setModalError} />
       
-      {/* SİLME ONAY MODALI BAĞLANDI */}
       <DeleteConfirmModal 
         isOpen={deleteModal.isOpen} 
         onClose={() => setDeleteModal({ isOpen: false, channelId: null, channelName: "" })} 
@@ -231,9 +282,17 @@ const Profile = () => {
         channelName={deleteModal.channelName} 
       />
 
+      <SummaryDetailModal 
+        isOpen={!!selectedSummary} 
+        onClose={() => setSelectedSummary(null)} 
+        summaryData={selectedSummary} 
+        onNotify={setNotification}
+      />
+
       <main className="pt-32 px-4 max-w-6xl mx-auto space-y-8">
         <Link href="/" className="flex items-center gap-2 text-gray-400 hover:text-white transition group mb-4 w-fit"><ArrowLeft size={16} /> Back to Dashboard</Link>
 
+        {/* --- Üst Kartlar: Plan ve Ayarlar --- */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white/5 backdrop-blur-2xl border border-white/10 p-8 rounded-[2.5rem] relative">
             <p className="text-cyan-400 text-xs font-bold uppercase tracking-widest mb-2">Account Status</p>
@@ -246,6 +305,7 @@ const Profile = () => {
           <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-8 rounded-[2.5rem]">
             <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-green-400"><CheckCircle size={20} /> Settings</h3>
             <div className="space-y-4">
+              {/* Email Section */}
               <div>
                 <div className="flex justify-between items-end mb-1">
                     <label className="text-[10px] text-gray-400 font-bold uppercase">Notification Email</label>
@@ -271,6 +331,7 @@ const Profile = () => {
                   )}
                 </AnimatePresence>
               </div>
+              {/* Telegram Section */}
               <div>
                 <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Telegram Integration</label>
                 <div className="space-y-3">
@@ -278,7 +339,7 @@ const Profile = () => {
                     <div className="flex items-center justify-between bg-green-500/10 border border-green-500/30 p-4 rounded-2xl">
                         <div className="flex items-center gap-3 text-left">
                             <CheckCircle size={16} className="text-green-400" />
-                            <div><p className="text-[10px] text-gray-400 uppercase font-bold text-left">Status</p><p className="text-xs text-green-400 font-bold">Bot Connected</p></div>
+                            <div><p className="text-[10px] text-gray-400 uppercase font-bold">Status</p><p className="text-xs text-green-400 font-bold">Connected</p></div>
                         </div>
                         <button onClick={() => setTempNotif({...tempNotif, telegram: ""})} className="text-gray-500 hover:text-red-400 transition"><Trash2 size={16} /></button>
                     </div>
@@ -291,18 +352,19 @@ const Profile = () => {
           </div>
         </div>
 
+        {/* --- Alt Bölüm: Kanallar ve Geçmiş --- */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Channels Section */}
           <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem]">
             <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-red-500"><Youtube /> Channels</h3>
             <div className="flex gap-2 mb-6">
                 <input value={channelId} onChange={(e) => setChannelId(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleAddChannel()} placeholder="@mrbeast" className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-cyan-500/50" />
                 <button onClick={handleAddChannel} className="bg-white text-black px-6 rounded-xl font-bold hover:bg-cyan-400 transition">Add</button>
             </div>
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar text-left">
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
               {userData?.activeChannels?.map((ch) => (
                 <div key={ch.id} className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/5 group hover:border-white/20 transition">
                   <span className="text-sm font-medium">{ch.channelId}</span>
-                  {/* SİLME BUTONU MODALI TETİKLİYOR */}
                   <button 
                     onClick={() => setDeleteModal({ isOpen: true, channelId: ch.id, channelName: ch.channelId })} 
                     className="text-gray-500 hover:text-red-500 p-2 transition-colors"
@@ -314,20 +376,34 @@ const Profile = () => {
             </div>
           </div>
 
+          {/* History Section (GÜNCELLENDİ: OnClick eklendi) */}
           <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem]">
             <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-cyan-400"><History /> History</h3>
-            <div className="space-y-4 max-h-60 overflow-y-auto pr-2 custom-scrollbar text-left">
+            <div className="space-y-4 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
               {userData?.history?.length > 0 ? userData.history.map((item) => (
-                <div key={item.id} className="p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition flex justify-between items-center">
-                  <h4 className="font-bold text-sm truncate pr-4">{item.title}</h4>
-                  <span className="text-[10px] text-gray-500 uppercase shrink-0 font-bold">{item.date}</span>
-                </div>
+                <motion.div 
+                  key={item.id} 
+                  whileHover={{ x: 4 }}
+                  onClick={() => setSelectedSummary(item)}
+                  className="p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 hover:border-cyan-500/30 transition flex justify-between items-center cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <FileText className="text-gray-500 group-hover:text-cyan-400 shrink-0" size={16} />
+                    <h4 className="font-bold text-sm truncate pr-4 text-gray-300 group-hover:text-white transition-colors">{item.title}</h4>
+                  </div>
+                  <span className="text-[10px] text-gray-500 uppercase shrink-0 font-bold bg-white/5 px-2 py-1 rounded-md">{item.date}</span>
+                </motion.div>
               )) : <p className="text-gray-500 text-sm italic">No history found.</p>}
             </div>
           </div>
         </div>
       </main>
-      <style jsx global>{`.custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }`}</style>
+
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; } 
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+        .prose strong { color: white; }
+      `}</style>
     </div>
   );
 };

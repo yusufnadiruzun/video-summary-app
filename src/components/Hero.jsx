@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react";
 
 const Hero = ({ videoId, setVideoId, keywords, setKeywords, handleGetSummary, loading, error }) => {
   return (
-    <div className="pt-32 pb-20 px-4 sm:px-6 max-w-7xl mx-auto">
+    <div className="pt-32 pb-6 px-4 sm:px-6 max-w-7xl mx-auto">
       <div className="text-center max-w-4xl mx-auto">
         {/* ... (Başlık ve Açıklama kısmı aynı kalacak) ... */}
         <motion.div
